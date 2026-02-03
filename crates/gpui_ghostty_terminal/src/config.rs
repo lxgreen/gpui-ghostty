@@ -1,12 +1,16 @@
 use ghostty_vt::Rgb;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct TerminalConfig {
     pub cols: u16,
     pub rows: u16,
     pub default_fg: Rgb,
     pub default_bg: Rgb,
     pub update_window_title: bool,
+    /// Font family name (e.g., "JetBrains Mono"). If `None`, uses platform default.
+    pub font_family: Option<String>,
+    /// Font size in points. If `None`, uses the system default.
+    pub font_size: Option<f32>,
 }
 
 impl Default for TerminalConfig {
@@ -25,6 +29,8 @@ impl Default for TerminalConfig {
                 b: 0x00,
             },
             update_window_title: true,
+            font_family: None,
+            font_size: None,
         }
     }
 }

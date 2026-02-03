@@ -4,9 +4,9 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use gpui::{App, AppContext, Application, KeyBinding, SharedString, WindowOptions};
+use gpui::{App, AppContext, Application, KeyBinding, SharedString, WindowOptions, px};
 use gpui_ghostty_terminal::view::{Copy, Paste, SelectAll, TerminalInput, TerminalView};
-use gpui_ghostty_terminal::{TerminalConfig, TerminalSession};
+use gpui_ghostty_terminal::{TerminalConfig, TerminalSession, load_config, terminal_font};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 fn main() {
@@ -18,7 +18,8 @@ fn main() {
         ]);
 
         cx.open_window(WindowOptions::default(), |window, cx| {
-            let config = TerminalConfig::default();
+            // Load config from ~/.config/ghostty/config, falling back to defaults
+            let config = load_config().unwrap_or_else(|_| TerminalConfig::default());
 
             let pty_system = native_pty_system();
             let pty_pair = pty_system
@@ -87,6 +88,9 @@ fn main() {
                 }
             });
 
+            // Clone config for use in closures
+            let config_for_resize = config.clone();
+
             let view = cx.new(|cx| {
                 let focus_handle = cx.focus_handle();
                 focus_handle.focus(window, cx);
@@ -108,10 +112,15 @@ fn main() {
                     let height = f32::from(size.height);
 
                     let mut style = window.text_style();
-                    let font = gpui_ghostty_terminal::default_terminal_font();
+                    let font = terminal_font(&config_for_resize);
                     style.font_family = font.family.clone();
                     style.font_features = gpui_ghostty_terminal::default_terminal_font_features();
                     style.font_fallbacks = font.fallbacks.clone();
+
+                    // Use configured font size if available
+                    if let Some(font_size) = config_for_resize.font_size {
+                        style.font_size = gpui::AbsoluteLength::Pixels(px(font_size)).into();
+                    }
 
                     let rem_size = window.rem_size();
                     let font_size = style.font_size.to_pixels(rem_size);

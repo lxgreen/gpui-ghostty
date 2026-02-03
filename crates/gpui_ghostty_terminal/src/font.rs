@@ -1,13 +1,19 @@
-pub fn default_terminal_font() -> gpui::Font {
-    let family = if cfg!(target_os = "macos") {
+use crate::TerminalConfig;
+
+/// Returns the platform-specific default font family for terminals.
+fn default_font_family() -> &'static str {
+    if cfg!(target_os = "macos") {
         "Menlo"
     } else if cfg!(target_os = "windows") {
         "Consolas"
     } else {
         "DejaVu Sans Mono"
-    };
+    }
+}
 
-    let fallbacks = gpui::FontFallbacks::from_fonts(vec![
+/// Returns font fallbacks for terminal rendering.
+fn terminal_font_fallbacks() -> gpui::FontFallbacks {
+    gpui::FontFallbacks::from_fonts(vec![
         "SF Mono".to_string(),
         "Menlo".to_string(),
         "Monaco".to_string(),
@@ -27,10 +33,26 @@ pub fn default_terminal_font() -> gpui::Font {
         "Apple Color Emoji".to_string(),
         "Noto Color Emoji".to_string(),
         "Segoe UI Emoji".to_string(),
-    ]);
+    ])
+}
 
+/// Returns the default terminal font (platform-specific).
+pub fn default_terminal_font() -> gpui::Font {
+    let mut font = gpui::font(default_font_family());
+    font.fallbacks = Some(terminal_font_fallbacks());
+    font
+}
+
+/// Returns a terminal font based on the provided configuration.
+///
+/// If `config.font_family` is set, uses that font family; otherwise uses the platform default.
+pub fn terminal_font(config: &TerminalConfig) -> gpui::Font {
+    let family = match &config.font_family {
+        Some(f) => f.clone(),
+        None => default_font_family().to_string(),
+    };
     let mut font = gpui::font(family);
-    font.fallbacks = Some(fallbacks);
+    font.fallbacks = Some(terminal_font_fallbacks());
     font
 }
 
