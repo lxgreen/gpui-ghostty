@@ -122,7 +122,18 @@ fn parse_line(line: &str) -> Option<(&str, &str)> {
     let mut parts = line.splitn(2, '=');
     let key = parts.next()?.trim();
     let value = parts.next()?.trim();
+    // Strip surrounding quotes if present (Ghostty allows optional quotes)
+    let value = strip_quotes(value);
     Some((key, value))
+}
+
+/// Strip surrounding double quotes from a string value.
+fn strip_quotes(s: &str) -> &str {
+    if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
+        &s[1..s.len() - 1]
+    } else {
+        s
+    }
 }
 
 /// Apply a single config option to the config struct.
@@ -257,6 +268,15 @@ mod tests {
         assert_eq!(parse_line("key =value"), Some(("key", "value")));
         assert_eq!(parse_line("key ="), Some(("key", "")));
         assert_eq!(parse_line("no-equals"), None);
+        // Quoted values should have quotes stripped
+        assert_eq!(
+            parse_line("key = \"quoted value\""),
+            Some(("key", "quoted value"))
+        );
+        assert_eq!(
+            parse_line("font-family = \"JetBrains Mono\""),
+            Some(("font-family", "JetBrains Mono"))
+        );
     }
 
     #[test]

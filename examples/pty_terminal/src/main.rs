@@ -90,6 +90,7 @@ fn main() {
 
             // Clone config for use in closures
             let config_for_resize = config.clone();
+            let config_for_view = config.clone();
 
             let view = cx.new(|cx| {
                 let focus_handle = cx.focus_handle();
@@ -101,7 +102,10 @@ fn main() {
                     let _ = stdin_tx.send(bytes.to_vec());
                 });
 
-                TerminalView::new_with_input(session, focus_handle, input)
+                let mut view = TerminalView::new_with_input(session, focus_handle, input);
+                // Apply font from config
+                view.set_font(terminal_font(&config_for_view));
+                view
             });
 
             let master_for_resize = master.clone();

@@ -310,6 +310,14 @@ impl TerminalView {
         .with_refreshed_viewport()
     }
 
+    /// Set the font used for terminal rendering.
+    pub fn set_font(&mut self, font: gpui::Font) {
+        self.font = font;
+        // Clear line layouts to force re-shaping with new font
+        self.line_layouts.clear();
+        self.line_layout_key = None;
+    }
+
     fn utf16_len(s: &str) -> usize {
         s.chars().map(|ch| ch.len_utf16()).sum()
     }
