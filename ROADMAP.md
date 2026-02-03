@@ -75,6 +75,7 @@ Deliver a maintainable Rust workspace that bootstraps an embedded terminal contr
 - [x] Refactor: unify TerminalView input send paths.
 - [x] Refactor: deduplicate output feed+dirty handling.
 - [x] Fix viewport scroll rendering: expose viewport scroll delta and apply incremental line shifting.
+- [x] Add missing VT scroll/line handlers (scrollUp, scrollDown, insertLines, deleteLines, etc.) for TUI apps like nvim.
 
 ## User Work
 
