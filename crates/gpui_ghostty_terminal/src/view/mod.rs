@@ -285,6 +285,11 @@ impl TerminalView {
         }
     }
 
+    /// Get a reference to the terminal's focus handle
+    pub fn focus_handle(&self) -> &FocusHandle {
+        &self.focus_handle
+    }
+
     pub fn new_with_input(
         session: TerminalSession,
         focus_handle: FocusHandle,
