@@ -175,6 +175,38 @@ const Handler = struct {
         self.terminal.eraseLine(mode, protected);
     }
 
+    pub fn eraseChars(self: *Handler, count: usize) !void {
+        self.terminal.eraseChars(count);
+    }
+
+    pub fn insertLines(self: *Handler, count: usize) !void {
+        self.terminal.insertLines(count);
+    }
+
+    pub fn deleteLines(self: *Handler, count: usize) !void {
+        self.terminal.deleteLines(count);
+    }
+
+    pub fn insertBlanks(self: *Handler, count: usize) !void {
+        self.terminal.insertBlanks(count);
+    }
+
+    pub fn deleteChars(self: *Handler, count: usize) !void {
+        self.terminal.deleteChars(count);
+    }
+
+    pub fn scrollUp(self: *Handler, count: usize) !void {
+        self.terminal.scrollUp(count);
+    }
+
+    pub fn scrollDown(self: *Handler, count: usize) !void {
+        self.terminal.scrollDown(count);
+    }
+
+    pub fn reverseIndex(self: *Handler) !void {
+        self.terminal.reverseIndex();
+    }
+
     pub fn startHyperlink(self: *Handler, uri: []const u8, id: ?[]const u8) !void {
         try self.terminal.screen.startHyperlink(uri, id);
     }
