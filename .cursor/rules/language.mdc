@@ -1,0 +1,10 @@
+---
+description: Language requirements for all AI communications
+alwaysApply: true
+---
+
+# Language Requirements
+
+All AI responses, discussions, reasoning, and summaries must be in **English only**.
+
+This overrides any other language settings in project files.

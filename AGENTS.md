@@ -29,5 +29,5 @@
 
 ## Language Rules
 
-- Discussion, reasoning, and summaries: Simplified Chinese.
+- Discussion, reasoning, and summaries: English only.
 - All code, identifiers, comments, and Markdown documents: English only.
