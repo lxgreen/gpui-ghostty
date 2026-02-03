@@ -14,6 +14,15 @@ fn default_font_family() -> &'static str {
 /// Returns font fallbacks for terminal rendering.
 fn terminal_font_fallbacks() -> gpui::FontFallbacks {
     gpui::FontFallbacks::from_fonts(vec![
+        // Nerd Font variants (for Powerline/devicons glyphs)
+        "JetBrainsMono NFM".to_string(),
+        "JetBrainsMono Nerd Font Mono".to_string(),
+        "JetBrainsMono Nerd Font".to_string(),
+        "FiraCode Nerd Font Mono".to_string(),
+        "Hack Nerd Font Mono".to_string(),
+        "Symbols Nerd Font Mono".to_string(),
+        "Symbols Nerd Font".to_string(),
+        // Standard monospace fonts
         "SF Mono".to_string(),
         "Menlo".to_string(),
         "Monaco".to_string(),
@@ -23,6 +32,7 @@ fn terminal_font_fallbacks() -> gpui::FontFallbacks {
         "Noto Sans Mono".to_string(),
         "JetBrains Mono".to_string(),
         "Fira Mono".to_string(),
+        // CJK fonts
         "Sarasa Mono SC".to_string(),
         "Sarasa Term SC".to_string(),
         "Sarasa Mono J".to_string(),
@@ -30,6 +40,7 @@ fn terminal_font_fallbacks() -> gpui::FontFallbacks {
         "Noto Sans Mono CJK JP".to_string(),
         "Source Han Mono SC".to_string(),
         "WenQuanYi Zen Hei Mono".to_string(),
+        // Emoji fonts
         "Apple Color Emoji".to_string(),
         "Noto Color Emoji".to_string(),
         "Segoe UI Emoji".to_string(),

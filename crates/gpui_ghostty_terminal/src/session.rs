@@ -269,6 +269,13 @@ impl TerminalSession {
                         let resp = format!("\x1b[{};{}R", row, col);
                         send(resp.as_bytes());
                     }
+                    TerminalQuery::PrimaryDeviceAttributes => {
+                        // Respond as VT220 with ANSI color support
+                        // CSI ? 62 ; 1 ; 2 ; 6 ; 7 ; 8 ; 9 c
+                        // 62 = VT220, 1 = 132 cols, 2 = printer, 6 = selective erase,
+                        // 7 = DRCS, 8 = UDK, 9 = national replacement
+                        send(b"\x1b[?62;1;2;6;7;8;9c");
+                    }
                 }
             }
 
@@ -354,6 +361,7 @@ impl TerminalSession {
 enum TerminalQuery {
     DeviceStatus,
     CursorPosition,
+    PrimaryDeviceAttributes,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -386,6 +394,7 @@ enum DsrScanState {
     CsiQ5,
     Csi6,
     CsiQ6,
+    Csi0, // For DA1: ESC [ 0 c
 }
 
 impl DsrScanState {
@@ -395,6 +404,8 @@ impl DsrScanState {
         let matched = match (*self, b) {
             (Csi5, b'n') | (CsiQ5, b'n') => Some(TerminalQuery::DeviceStatus),
             (Csi6, b'n') | (CsiQ6, b'n') => Some(TerminalQuery::CursorPosition),
+            // DA1: ESC [ c or ESC [ 0 c
+            (Csi, b'c') | (Csi0, b'c') => Some(TerminalQuery::PrimaryDeviceAttributes),
             _ => None,
         };
 
@@ -406,10 +417,13 @@ impl DsrScanState {
             (CsiQ, b'5') => CsiQ5,
             (Csi, b'6') => Csi6,
             (CsiQ, b'6') => CsiQ6,
+            (Csi, b'0') => Csi0,
             (Csi5, b'n') => Idle,
             (CsiQ5, b'n') => Idle,
             (Csi6, b'n') => Idle,
             (CsiQ6, b'n') => Idle,
+            (Csi, b'c') => Idle,
+            (Csi0, b'c') => Idle,
             _ => Idle,
         };
 

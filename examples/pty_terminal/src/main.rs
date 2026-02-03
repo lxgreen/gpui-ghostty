@@ -33,9 +33,26 @@ fn main() {
 
             let master: Arc<dyn portable_pty::MasterPty + Send> = Arc::from(pty_pair.master);
 
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+            // Use command from config, or fall back to $SHELL, or /bin/zsh
+            let shell_cmd = config.command.clone().unwrap_or_else(|| {
+                std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string())
+            });
+
+            // Parse command - if it contains spaces, treat as command + args
+            let mut parts = shell_cmd.split_whitespace();
+            let shell = parts.next().unwrap_or("/bin/zsh");
             let mut cmd = CommandBuilder::new(shell);
-            cmd.arg("-l");
+
+            // Add remaining parts as arguments
+            for arg in parts {
+                cmd.arg(arg);
+            }
+
+            // If no args were in the command string, add login flag for shells
+            if shell_cmd.split_whitespace().count() == 1 {
+                cmd.arg("-l");
+            }
+
             cmd.env("TERM", "xterm-256color");
             cmd.env("COLORTERM", "truecolor");
             cmd.env("TERM_PROGRAM", "gpui-ghostty");
@@ -43,7 +60,7 @@ fn main() {
             let mut child = pty_pair
                 .slave
                 .spawn_command(cmd)
-                .expect("spawn login shell failed");
+                .expect("spawn shell failed");
 
             thread::spawn(move || {
                 let _ = child.wait();
@@ -103,8 +120,11 @@ fn main() {
                 });
 
                 let mut view = TerminalView::new_with_input(session, focus_handle, input);
-                // Apply font from config
+                // Apply font settings from config
                 view.set_font(terminal_font(&config_for_view));
+                if let Some(size) = config_for_view.font_size {
+                    view.set_font_size(px(size));
+                }
                 view
             });
 

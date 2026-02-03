@@ -11,6 +11,8 @@ pub struct TerminalConfig {
     pub font_family: Option<String>,
     /// Font size in points. If `None`, uses the system default.
     pub font_size: Option<f32>,
+    /// Shell command to run. If `None`, uses `$SHELL` or platform default.
+    pub command: Option<String>,
 }
 
 impl Default for TerminalConfig {
@@ -31,6 +33,7 @@ impl Default for TerminalConfig {
             update_window_title: true,
             font_family: None,
             font_size: None,
+            command: None,
         }
     }
 }

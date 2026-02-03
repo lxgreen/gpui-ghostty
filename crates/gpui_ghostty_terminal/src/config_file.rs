@@ -198,6 +198,13 @@ fn apply_config_option(
                 config.font_size = Some(size);
             }
         }
+        "command" => {
+            if value.is_empty() {
+                config.command = None;
+            } else {
+                config.command = Some(value.to_string());
+            }
+        }
         // Unknown keys are silently ignored (matching Ghostty behavior for forward compatibility)
         _ => {}
     }
