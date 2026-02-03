@@ -1,4 +1,4 @@
-use ghostty_vt::{Error, Rgb, Terminal};
+use ghostty_vt::{CursorStyle, Error, Rgb, Terminal};
 
 use crate::TerminalConfig;
 
@@ -326,6 +326,31 @@ impl TerminalSession {
 
     pub fn cursor_position(&self) -> Option<(u16, u16)> {
         self.terminal.cursor_position()
+    }
+
+    /// Returns the current cursor style (may be changed by DECSCUSR escape sequences).
+    pub fn cursor_style(&self) -> CursorStyle {
+        self.terminal.cursor_style()
+    }
+
+    /// Returns true if cursor blink is enabled.
+    pub fn cursor_blink(&self) -> bool {
+        self.terminal.cursor_blink()
+    }
+
+    /// Returns true if cursor is visible.
+    pub fn cursor_visible(&self) -> bool {
+        self.terminal.cursor_visible()
+    }
+
+    /// Returns the configured default cursor style.
+    pub fn default_cursor_style(&self) -> CursorStyle {
+        self.config.cursor_style
+    }
+
+    /// Returns a reference to the terminal configuration.
+    pub fn config(&self) -> &TerminalConfig {
+        &self.config
     }
 
     pub fn scroll_viewport(&mut self, delta_lines: i32) -> Result<(), Error> {

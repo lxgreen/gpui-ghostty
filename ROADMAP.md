@@ -79,6 +79,7 @@ Deliver a maintainable Rust workspace that bootstraps an embedded terminal contr
 
 ## User Work
 
+- [x] Support cursor settings from Ghostty config (cursor-style, cursor-style-blink, cursor-color, cursor-text, adjust-cursor-height)
 - [x] Cleanup features: make gpui and Zig build required.
 - [x] Auto push to remote after commit (documented in `AGENTS.md`).
 - [x] Add basic keyboard input to `basic_terminal` (type-to-echo).

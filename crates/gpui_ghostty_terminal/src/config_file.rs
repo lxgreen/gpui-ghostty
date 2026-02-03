@@ -7,9 +7,10 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-use ghostty_vt::Rgb;
+use ghostty_vt::{CursorStyle, Rgb};
 
 use crate::TerminalConfig;
+use crate::config::CursorColor;
 
 /// Errors that can occur when loading a config file.
 #[derive(Debug)]
@@ -205,6 +206,65 @@ fn apply_config_option(
                 config.command = Some(value.to_string());
             }
         }
+        "cursor-style" => {
+            config.cursor_style = parse_cursor_style(value).ok_or_else(|| ConfigError::Parse {
+                line: line_num,
+                message: format!(
+                    "invalid cursor style: {} (expected block, bar, or underline)",
+                    value
+                ),
+            })?;
+        }
+        "cursor-style-blink" => {
+            if value.is_empty() {
+                config.cursor_style_blink = None;
+            } else {
+                config.cursor_style_blink =
+                    Some(parse_bool(value).ok_or_else(|| ConfigError::Parse {
+                        line: line_num,
+                        message: format!("invalid boolean: {} (expected true or false)", value),
+                    })?);
+            }
+        }
+        "cursor-color" => {
+            if value.is_empty() {
+                config.cursor_color = CursorColor::CellForeground;
+            } else {
+                config.cursor_color =
+                    parse_cursor_color(value).ok_or_else(|| ConfigError::Parse {
+                        line: line_num,
+                        message: format!("invalid cursor color: {}", value),
+                    })?;
+            }
+        }
+        "cursor-text" => {
+            if value.is_empty() {
+                config.cursor_text = CursorColor::CellBackground;
+            } else {
+                config.cursor_text =
+                    parse_cursor_color(value).ok_or_else(|| ConfigError::Parse {
+                        line: line_num,
+                        message: format!("invalid cursor text color: {}", value),
+                    })?;
+            }
+        }
+        "adjust-cursor-height" => {
+            if value.is_empty() {
+                config.adjust_cursor_height = None;
+            } else {
+                config.adjust_cursor_height = Some(parse_percentage(value).ok_or_else(|| ConfigError::Parse {
+                    line: line_num,
+                    message: format!("invalid cursor height: {} (expected percentage like 47% or decimal like 0.47)", value),
+                })?);
+            }
+        }
+        // cursor-invert-fg-bg is deprecated but we support it for compatibility
+        "cursor-invert-fg-bg" => {
+            if parse_bool(value).unwrap_or(false) {
+                config.cursor_color = CursorColor::CellForeground;
+                config.cursor_text = CursorColor::CellBackground;
+            }
+        }
         // Unknown keys are silently ignored (matching Ghostty behavior for forward compatibility)
         _ => {}
     }
@@ -229,6 +289,65 @@ pub fn parse_color(value: &str) -> Option<Rgb> {
     let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
 
     Some(Rgb { r, g, b })
+}
+
+/// Parse a cursor style value.
+fn parse_cursor_style(value: &str) -> Option<CursorStyle> {
+    match value.to_lowercase().as_str() {
+        "block" => Some(CursorStyle::Block),
+        "bar" => Some(CursorStyle::Bar),
+        "underline" => Some(CursorStyle::Underline),
+        _ => None,
+    }
+}
+
+/// Parse a boolean value.
+fn parse_bool(value: &str) -> Option<bool> {
+    match value.to_lowercase().as_str() {
+        "true" | "1" | "yes" => Some(true),
+        "false" | "0" | "no" => Some(false),
+        _ => None,
+    }
+}
+
+/// Parse a cursor color value.
+///
+/// Supports:
+/// - `cell-foreground` or `CellForeground`
+/// - `cell-background` or `CellBackground`
+/// - Hex color (`#RRGGBB` or `RRGGBB`)
+fn parse_cursor_color(value: &str) -> Option<CursorColor> {
+    // Normalize: lowercase, replace underscore with dash, remove all dashes
+    let normalized = value.to_lowercase().replace('_', "-");
+    match normalized.as_str() {
+        "cell-foreground" | "cellforeground" => Some(CursorColor::CellForeground),
+        "cell-background" | "cellbackground" => Some(CursorColor::CellBackground),
+        _ => parse_color(value).map(CursorColor::Color),
+    }
+}
+
+/// Parse a percentage value.
+///
+/// Supports:
+/// - `47%` (percentage with suffix)
+/// - `0.47` (decimal)
+/// - `47` (treated as percentage)
+fn parse_percentage(value: &str) -> Option<f32> {
+    if let Some(stripped) = value.strip_suffix('%') {
+        // "47%" -> 0.47
+        stripped.parse::<f32>().ok().map(|v| v / 100.0)
+    } else if let Ok(v) = value.parse::<f32>() {
+        // "0.47" or "47"
+        if v > 1.0 {
+            // "47" -> 0.47
+            Some(v / 100.0)
+        } else {
+            // "0.47" -> 0.47
+            Some(v)
+        }
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -377,5 +496,96 @@ another-unknown = test
         let input = "font-size = -12";
         let result = parse_config(input);
         assert!(matches!(result, Err(ConfigError::Parse { line: 1, .. })));
+    }
+
+    #[test]
+    fn test_parse_cursor_style() {
+        assert_eq!(parse_cursor_style("block"), Some(CursorStyle::Block));
+        assert_eq!(parse_cursor_style("bar"), Some(CursorStyle::Bar));
+        assert_eq!(
+            parse_cursor_style("underline"),
+            Some(CursorStyle::Underline)
+        );
+        assert_eq!(parse_cursor_style("Block"), Some(CursorStyle::Block));
+        assert_eq!(parse_cursor_style("BAR"), Some(CursorStyle::Bar));
+        assert_eq!(parse_cursor_style("invalid"), None);
+    }
+
+    #[test]
+    fn test_parse_bool() {
+        assert_eq!(parse_bool("true"), Some(true));
+        assert_eq!(parse_bool("false"), Some(false));
+        assert_eq!(parse_bool("1"), Some(true));
+        assert_eq!(parse_bool("0"), Some(false));
+        assert_eq!(parse_bool("yes"), Some(true));
+        assert_eq!(parse_bool("no"), Some(false));
+        assert_eq!(parse_bool("TRUE"), Some(true));
+        assert_eq!(parse_bool("invalid"), None);
+    }
+
+    #[test]
+    fn test_parse_cursor_color() {
+        assert_eq!(
+            parse_cursor_color("cell-foreground"),
+            Some(CursorColor::CellForeground)
+        );
+        assert_eq!(
+            parse_cursor_color("cell-background"),
+            Some(CursorColor::CellBackground)
+        );
+        assert_eq!(
+            parse_cursor_color("CellForeground"),
+            Some(CursorColor::CellForeground)
+        );
+        assert_eq!(
+            parse_cursor_color("cell_foreground"),
+            Some(CursorColor::CellForeground)
+        );
+        assert_eq!(
+            parse_cursor_color("#ff0000"),
+            Some(CursorColor::Color(Rgb { r: 255, g: 0, b: 0 }))
+        );
+        assert_eq!(
+            parse_cursor_color("00ff00"),
+            Some(CursorColor::Color(Rgb { r: 0, g: 255, b: 0 }))
+        );
+    }
+
+    #[test]
+    fn test_parse_percentage() {
+        assert_eq!(parse_percentage("47%"), Some(0.47));
+        assert_eq!(parse_percentage("100%"), Some(1.0));
+        assert_eq!(parse_percentage("0.47"), Some(0.47));
+        assert_eq!(parse_percentage("47"), Some(0.47));
+        assert_eq!(parse_percentage("0.5"), Some(0.5));
+        assert!(parse_percentage("invalid").is_none());
+    }
+
+    #[test]
+    fn test_parse_config_cursor_settings() {
+        let input = r#"
+cursor-style = bar
+cursor-style-blink = false
+cursor-color = #ff0000
+cursor-text = cell-background
+adjust-cursor-height = 47%
+"#;
+        let config = parse_config(input).unwrap();
+        assert_eq!(config.cursor_style, CursorStyle::Bar);
+        assert_eq!(config.cursor_style_blink, Some(false));
+        assert_eq!(
+            config.cursor_color,
+            CursorColor::Color(Rgb { r: 255, g: 0, b: 0 })
+        );
+        assert_eq!(config.cursor_text, CursorColor::CellBackground);
+        assert!((config.adjust_cursor_height.unwrap() - 0.47).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_config_cursor_invert_fg_bg() {
+        let input = "cursor-invert-fg-bg = true";
+        let config = parse_config(input).unwrap();
+        assert_eq!(config.cursor_color, CursorColor::CellForeground);
+        assert_eq!(config.cursor_text, CursorColor::CellBackground);
     }
 }

@@ -34,6 +34,18 @@ pub struct Rgb {
     pub b: u8,
 }
 
+/// Terminal cursor style (visual shape).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CursorStyle {
+    /// Filled rectangle (DECSCUSR 1/2)
+    #[default]
+    Block,
+    /// Vertical line (DECSCUSR 5/6)
+    Bar,
+    /// Horizontal line at bottom (DECSCUSR 3/4)
+    Underline,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CellStyle {
     pub fg: Rgb,
@@ -280,6 +292,27 @@ impl Terminal {
             )
         };
         ok.then_some((col, row))
+    }
+
+    /// Returns the current cursor style as set by DECSCUSR escape sequences.
+    pub fn cursor_style(&self) -> CursorStyle {
+        let style = unsafe { ghostty_vt_sys::ghostty_vt_terminal_cursor_style(self.ptr.as_ptr()) };
+        match style {
+            0 => CursorStyle::Block,
+            1 => CursorStyle::Bar,
+            2 => CursorStyle::Underline,
+            _ => CursorStyle::Block,
+        }
+    }
+
+    /// Returns true if cursor blink is enabled (DEC mode 12).
+    pub fn cursor_blink(&self) -> bool {
+        unsafe { ghostty_vt_sys::ghostty_vt_terminal_cursor_blink(self.ptr.as_ptr()) }
+    }
+
+    /// Returns true if cursor is visible (DEC mode 25).
+    pub fn cursor_visible(&self) -> bool {
+        unsafe { ghostty_vt_sys::ghostty_vt_terminal_cursor_visible(self.ptr.as_ptr()) }
     }
 
     pub fn hyperlink_at(&self, col: u16, row: u16) -> Option<String> {

@@ -1957,13 +1957,21 @@ impl Element for TerminalTextElement {
 
         let cursor = {
             let view = self.view.read(cx);
-            view.focus_handle
-                .is_focused(window)
-                .then(|| view.session.cursor_position())
-                .flatten()
+            let is_focused = view.focus_handle.is_focused(window);
+            let cursor_visible = view.session.cursor_visible();
+
+            if is_focused && cursor_visible {
+                view.session.cursor_position()
+            } else {
+                None
+            }
         }
         .and_then(|(col, row)| {
-            let background = { self.view.read(cx).session.default_background() };
+            let view = self.view.read(cx);
+            let background = view.session.default_background();
+            let cursor_style = view.session.cursor_style();
+            let config_cursor_height = view.session.config().adjust_cursor_height;
+
             let cursor_color = cursor_color_for_background(background);
             let y = bounds.top() + line_height * (row.saturating_sub(1)) as f32;
             let row_index = row.saturating_sub(1) as usize;
@@ -1971,10 +1979,36 @@ impl Element for TerminalTextElement {
             let byte_index = byte_index_for_column_in_line(line.text.as_str(), col);
             let x = bounds.left() + line.x_for_index(byte_index.min(line.text.len()));
 
-            Some(fill(
-                Bounds::new(point(x, y), size(px(2.0), line_height)),
-                cursor_color,
-            ))
+            // Calculate cell width for block cursor
+            let (cell_w, _) = cell_metrics(window, &font, configured_font_size)?;
+
+            let cursor_bounds = match cursor_style {
+                ghostty_vt::CursorStyle::Block => {
+                    // Full cell block
+                    Bounds::new(point(x, y), size(px(cell_w), line_height))
+                }
+                ghostty_vt::CursorStyle::Bar => {
+                    // Vertical bar (2px wide, or adjusted height as percentage of line_height)
+                    let bar_width = if let Some(pct) = config_cursor_height {
+                        px(cell_w * pct.clamp(0.0, 1.0))
+                    } else {
+                        px(2.0)
+                    };
+                    Bounds::new(point(x, y), size(bar_width, line_height))
+                }
+                ghostty_vt::CursorStyle::Underline => {
+                    // Horizontal underline (at bottom of cell)
+                    let underline_height = if let Some(pct) = config_cursor_height {
+                        line_height * pct.clamp(0.0, 1.0)
+                    } else {
+                        px(2.0)
+                    };
+                    let underline_y = y + line_height - underline_height;
+                    Bounds::new(point(x, underline_y), size(px(cell_w), underline_height))
+                }
+            };
+
+            Some(fill(cursor_bounds, cursor_color))
         });
 
         TerminalPrepaintState {

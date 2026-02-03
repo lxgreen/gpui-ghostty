@@ -52,6 +52,15 @@ unsafe extern "C" {
         row_out: *mut u16,
     ) -> bool;
 
+    /// Returns cursor style: 0 = block, 1 = bar, 2 = underline
+    pub fn ghostty_vt_terminal_cursor_style(terminal: *mut core::ffi::c_void) -> u8;
+
+    /// Returns true if cursor blink is enabled (DEC mode 12)
+    pub fn ghostty_vt_terminal_cursor_blink(terminal: *mut core::ffi::c_void) -> bool;
+
+    /// Returns true if cursor is visible (DEC mode 25)
+    pub fn ghostty_vt_terminal_cursor_visible(terminal: *mut core::ffi::c_void) -> bool;
+
     pub fn ghostty_vt_terminal_dump_viewport(
         terminal: *mut core::ffi::c_void,
     ) -> ghostty_vt_bytes_t;

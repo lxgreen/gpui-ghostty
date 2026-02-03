@@ -233,6 +233,23 @@ const Handler = struct {
             else => {},
         }
     }
+
+    pub fn setCursorStyle(self: *Handler, style: terminal.CursorStyleReq) !void {
+        // Convert DECSCUSR style to screen cursor style
+        const screen_style: terminal.CursorStyle = switch (style) {
+            .default, .blinking_block, .steady_block => .block,
+            .blinking_underline, .steady_underline => .underline,
+            .blinking_bar, .steady_bar => .bar,
+            _ => .block, // Unknown styles default to block
+        };
+        self.terminal.screen.cursor.cursor_style = screen_style;
+
+        // Set blink mode (DEC mode 12) based on DECSCUSR odd/even values
+        // Note: default (0) doesn't change blink state
+        if (style != .default) {
+            self.terminal.modes.set(.cursor_blinking, style.blinking());
+        }
+    }
 };
 
 export fn ghostty_vt_terminal_new(cols: u16, rows: u16) callconv(.C) ?*anyopaque {
@@ -333,6 +350,32 @@ export fn ghostty_vt_terminal_cursor_position(
     col_out.?.* = @intCast(handle.terminal.screen.cursor.x + 1);
     row_out.?.* = @intCast(handle.terminal.screen.cursor.y + 1);
     return true;
+}
+
+/// Cursor style values matching Screen.CursorStyle
+/// 0 = block, 1 = bar, 2 = underline
+export fn ghostty_vt_terminal_cursor_style(terminal_ptr: ?*anyopaque) callconv(.C) u8 {
+    if (terminal_ptr == null) return 0;
+    const handle: *TerminalHandle = @ptrCast(@alignCast(terminal_ptr.?));
+    return switch (handle.terminal.screen.cursor.cursor_style) {
+        .block, .block_hollow => 0,
+        .bar => 1,
+        .underline => 2,
+    };
+}
+
+/// Returns true if cursor blink is enabled (DEC mode 12)
+export fn ghostty_vt_terminal_cursor_blink(terminal_ptr: ?*anyopaque) callconv(.C) bool {
+    if (terminal_ptr == null) return false;
+    const handle: *TerminalHandle = @ptrCast(@alignCast(terminal_ptr.?));
+    return handle.terminal.modes.get(.cursor_blinking);
+}
+
+/// Returns true if cursor is visible (DEC mode 25)
+export fn ghostty_vt_terminal_cursor_visible(terminal_ptr: ?*anyopaque) callconv(.C) bool {
+    if (terminal_ptr == null) return true;
+    const handle: *TerminalHandle = @ptrCast(@alignCast(terminal_ptr.?));
+    return handle.terminal.modes.get(.cursor_visible);
 }
 
 export fn ghostty_vt_terminal_dump_viewport(terminal_ptr: ?*anyopaque) callconv(.C) ghostty_vt_bytes_t {
