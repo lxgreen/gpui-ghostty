@@ -12,6 +12,91 @@ pub enum CursorColor {
     CellBackground,
 }
 
+/// Default 16-color ANSI palette (colors 0-15).
+/// Standard terminal colors: 0-7 normal, 8-15 bright variants.
+pub const DEFAULT_PALETTE: [Rgb; 16] = [
+    Rgb {
+        r: 0x00,
+        g: 0x00,
+        b: 0x00,
+    }, // 0: Black
+    Rgb {
+        r: 0xCD,
+        g: 0x00,
+        b: 0x00,
+    }, // 1: Red
+    Rgb {
+        r: 0x00,
+        g: 0xCD,
+        b: 0x00,
+    }, // 2: Green
+    Rgb {
+        r: 0xCD,
+        g: 0xCD,
+        b: 0x00,
+    }, // 3: Yellow
+    Rgb {
+        r: 0x00,
+        g: 0x00,
+        b: 0xEE,
+    }, // 4: Blue
+    Rgb {
+        r: 0xCD,
+        g: 0x00,
+        b: 0xCD,
+    }, // 5: Magenta
+    Rgb {
+        r: 0x00,
+        g: 0xCD,
+        b: 0xCD,
+    }, // 6: Cyan
+    Rgb {
+        r: 0xE5,
+        g: 0xE5,
+        b: 0xE5,
+    }, // 7: White
+    Rgb {
+        r: 0x7F,
+        g: 0x7F,
+        b: 0x7F,
+    }, // 8: Bright Black (Gray)
+    Rgb {
+        r: 0xFF,
+        g: 0x00,
+        b: 0x00,
+    }, // 9: Bright Red
+    Rgb {
+        r: 0x00,
+        g: 0xFF,
+        b: 0x00,
+    }, // 10: Bright Green
+    Rgb {
+        r: 0xFF,
+        g: 0xFF,
+        b: 0x00,
+    }, // 11: Bright Yellow
+    Rgb {
+        r: 0x5C,
+        g: 0x5C,
+        b: 0xFF,
+    }, // 12: Bright Blue
+    Rgb {
+        r: 0xFF,
+        g: 0x00,
+        b: 0xFF,
+    }, // 13: Bright Magenta
+    Rgb {
+        r: 0x00,
+        g: 0xFF,
+        b: 0xFF,
+    }, // 14: Bright Cyan
+    Rgb {
+        r: 0xFF,
+        g: 0xFF,
+        b: 0xFF,
+    }, // 15: Bright White
+];
+
 #[derive(Clone, Debug)]
 pub struct TerminalConfig {
     pub cols: u16,
@@ -37,6 +122,13 @@ pub struct TerminalConfig {
     /// Adjust cursor height as percentage (0.0-1.0). Only affects bar/underline.
     /// Values > 1.0 are treated as percentages (e.g., 47 means 47%).
     pub adjust_cursor_height: Option<f32>,
+
+    /// 16-color ANSI palette (colors 0-15). If `None`, uses default palette.
+    pub palette: Option<[Rgb; 16]>,
+    /// Selection background color. If `None`, uses a default highlight color.
+    pub selection_background: Option<Rgb>,
+    /// Selection foreground color. If `None`, keeps original text color.
+    pub selection_foreground: Option<Rgb>,
 }
 
 impl Default for TerminalConfig {
@@ -63,6 +155,9 @@ impl Default for TerminalConfig {
             cursor_color: CursorColor::CellForeground,
             cursor_text: CursorColor::CellBackground,
             adjust_cursor_height: None,
+            palette: None,
+            selection_background: None,
+            selection_foreground: None,
         }
     }
 }

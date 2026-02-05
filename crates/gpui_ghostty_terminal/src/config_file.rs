@@ -1,7 +1,7 @@
 //! Ghostty config file parser.
 //!
 //! Loads configuration from `~/.config/ghostty/config` (or `$XDG_CONFIG_HOME/ghostty/config`)
-//! using the Ghostty key-value format.
+//! using the Ghostty key-value format. Also supports loading themes from theme files.
 
 use std::fs;
 use std::io;
@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use ghostty_vt::{CursorStyle, Rgb};
 
 use crate::TerminalConfig;
-use crate::config::CursorColor;
+use crate::config::{CursorColor, DEFAULT_PALETTE};
 
 /// Errors that can occur when loading a config file.
 #[derive(Debug)]
@@ -92,6 +92,236 @@ fn find_config_file() -> Option<PathBuf> {
 /// Get the user's home directory.
 fn home_dir() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(PathBuf::from)
+}
+
+/// Find a theme file by name.
+///
+/// Searches in order:
+/// 1. `$XDG_CONFIG_HOME/ghostty/themes/{name}` (if `XDG_CONFIG_HOME` is set)
+/// 2. `~/.config/ghostty/themes/{name}`
+/// 3. `/Applications/Ghostty.app/Contents/Resources/ghostty/themes/{name}` (macOS)
+/// 4. `/usr/share/ghostty/themes/{name}` (Linux system-wide)
+fn find_theme_file(name: &str) -> Option<PathBuf> {
+    // Try XDG_CONFIG_HOME first
+    if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
+        let path = PathBuf::from(xdg_config).join("ghostty/themes").join(name);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    // Try ~/.config/ghostty/themes/
+    if let Some(home) = home_dir() {
+        let path = home.join(".config/ghostty/themes").join(name);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    // macOS: Try Ghostty.app bundle
+    #[cfg(target_os = "macos")]
+    {
+        let path =
+            PathBuf::from("/Applications/Ghostty.app/Contents/Resources/ghostty/themes").join(name);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    // Linux: Try system-wide location
+    #[cfg(target_os = "linux")]
+    {
+        let path = PathBuf::from("/usr/share/ghostty/themes").join(name);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    None
+}
+
+/// Load and apply a theme by name.
+///
+/// Returns `Ok(())` if the theme was loaded successfully, or `Err` if the theme
+/// file was not found or could not be parsed.
+fn load_theme(config: &mut TerminalConfig, name: &str) -> Result<(), ConfigError> {
+    let path = find_theme_file(name).ok_or(ConfigError::NotFound)?;
+    let contents = fs::read_to_string(&path)?;
+    apply_theme_contents(config, &contents)
+}
+
+/// Apply theme file contents to a config.
+fn apply_theme_contents(config: &mut TerminalConfig, contents: &str) -> Result<(), ConfigError> {
+    for (line_num, line) in contents.lines().enumerate() {
+        let line_num = line_num + 1;
+
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        if let Some((key, value)) = parse_line(trimmed) {
+            apply_theme_option(config, key, value, line_num)?;
+        }
+    }
+    Ok(())
+}
+
+/// Apply a single theme option to the config.
+/// Theme files support a subset of config options (colors only).
+fn apply_theme_option(
+    config: &mut TerminalConfig,
+    key: &str,
+    value: &str,
+    line_num: usize,
+) -> Result<(), ConfigError> {
+    match key {
+        "foreground" => {
+            if !value.is_empty() {
+                config.default_fg = parse_color(value).ok_or_else(|| ConfigError::Parse {
+                    line: line_num,
+                    message: format!("invalid color: {}", value),
+                })?;
+            }
+        }
+        "background" => {
+            if !value.is_empty() {
+                config.default_bg = parse_color(value).ok_or_else(|| ConfigError::Parse {
+                    line: line_num,
+                    message: format!("invalid color: {}", value),
+                })?;
+            }
+        }
+        "cursor-color" => {
+            if !value.is_empty() {
+                config.cursor_color =
+                    parse_cursor_color(value).ok_or_else(|| ConfigError::Parse {
+                        line: line_num,
+                        message: format!("invalid cursor color: {}", value),
+                    })?;
+            }
+        }
+        "cursor-text" => {
+            if !value.is_empty() {
+                config.cursor_text =
+                    parse_cursor_color(value).ok_or_else(|| ConfigError::Parse {
+                        line: line_num,
+                        message: format!("invalid cursor text color: {}", value),
+                    })?;
+            }
+        }
+        "selection-background" => {
+            if value.is_empty() {
+                config.selection_background = None;
+            } else {
+                config.selection_background =
+                    Some(parse_color(value).ok_or_else(|| ConfigError::Parse {
+                        line: line_num,
+                        message: format!("invalid selection background color: {}", value),
+                    })?);
+            }
+        }
+        "selection-foreground" => {
+            if value.is_empty() {
+                config.selection_foreground = None;
+            } else {
+                config.selection_foreground =
+                    Some(parse_color(value).ok_or_else(|| ConfigError::Parse {
+                        line: line_num,
+                        message: format!("invalid selection foreground color: {}", value),
+                    })?);
+            }
+        }
+        "palette" => {
+            // Format: "palette = N=#RRGGBB" where N is 0-15
+            if let Some((index, color)) = parse_palette_entry(value)
+                && index < 16
+            {
+                let palette = config.palette.get_or_insert(DEFAULT_PALETTE);
+                palette[index] = color;
+            }
+            // Invalid palette entries are silently ignored
+        }
+        // Unknown keys in theme files are silently ignored
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Parse a palette entry value.
+/// Format: "N=#RRGGBB" where N is the palette index (0-15).
+fn parse_palette_entry(value: &str) -> Option<(usize, Rgb)> {
+    let (index_str, color_str) = value.split_once('=')?;
+    let index: usize = index_str.trim().parse().ok()?;
+    let color = parse_color(color_str.trim())?;
+    Some((index, color))
+}
+
+/// Parse a theme specification.
+///
+/// Supports:
+/// - Simple theme name: `"Catppuccin Mocha"`
+/// - Dark/light variants: `"dark:Catppuccin Mocha,light:Catppuccin Latte"`
+///
+/// Returns the theme name to load based on system appearance.
+fn resolve_theme_name(theme_spec: &str) -> Option<&str> {
+    let theme_spec = theme_spec.trim();
+    if theme_spec.is_empty() {
+        return None;
+    }
+
+    // Check for dark:/light: syntax
+    if theme_spec.contains(':') {
+        let is_dark = is_system_dark_mode();
+        for part in theme_spec.split(',') {
+            let part = part.trim();
+            if let Some(name) = part.strip_prefix("dark:")
+                && is_dark
+            {
+                return Some(name.trim());
+            } else if let Some(name) = part.strip_prefix("light:")
+                && !is_dark
+            {
+                return Some(name.trim());
+            }
+        }
+        // If no matching variant found, try to use the first one
+        for part in theme_spec.split(',') {
+            let part = part.trim();
+            if let Some(name) = part
+                .strip_prefix("dark:")
+                .or_else(|| part.strip_prefix("light:"))
+            {
+                return Some(name.trim());
+            }
+        }
+        None
+    } else {
+        // Simple theme name
+        Some(theme_spec)
+    }
+}
+
+/// Detect if the system is in dark mode.
+#[cfg(target_os = "macos")]
+fn is_system_dark_mode() -> bool {
+    use std::process::Command;
+    // Use defaults read to check macOS appearance
+    Command::new("defaults")
+        .args(["read", "-g", "AppleInterfaceStyle"])
+        .output()
+        .map(|output| {
+            String::from_utf8_lossy(&output.stdout)
+                .trim()
+                .eq_ignore_ascii_case("dark")
+        })
+        .unwrap_or(true) // Default to dark if detection fails
+}
+
+#[cfg(not(target_os = "macos"))]
+fn is_system_dark_mode() -> bool {
+    // Default to dark mode on other platforms
+    true
 }
 
 /// Parse config file contents into a `TerminalConfig`.
@@ -263,6 +493,46 @@ fn apply_config_option(
             if parse_bool(value).unwrap_or(false) {
                 config.cursor_color = CursorColor::CellForeground;
                 config.cursor_text = CursorColor::CellBackground;
+            }
+        }
+        "theme" => {
+            if !value.is_empty()
+                && let Some(theme_name) = resolve_theme_name(value)
+            {
+                // Silently ignore theme loading errors (theme file not found, etc.)
+                let _ = load_theme(config, theme_name);
+            }
+        }
+        "palette" => {
+            // Format: "palette = N=#RRGGBB" where N is 0-15
+            if let Some((index, color)) = parse_palette_entry(value)
+                && index < 16
+            {
+                let palette = config.palette.get_or_insert(DEFAULT_PALETTE);
+                palette[index] = color;
+            }
+            // Invalid palette entries are silently ignored
+        }
+        "selection-background" => {
+            if value.is_empty() {
+                config.selection_background = None;
+            } else {
+                config.selection_background =
+                    Some(parse_color(value).ok_or_else(|| ConfigError::Parse {
+                        line: line_num,
+                        message: format!("invalid selection background color: {}", value),
+                    })?);
+            }
+        }
+        "selection-foreground" => {
+            if value.is_empty() {
+                config.selection_foreground = None;
+            } else {
+                config.selection_foreground =
+                    Some(parse_color(value).ok_or_else(|| ConfigError::Parse {
+                        line: line_num,
+                        message: format!("invalid selection foreground color: {}", value),
+                    })?);
             }
         }
         // Unknown keys are silently ignored (matching Ghostty behavior for forward compatibility)
@@ -587,5 +857,256 @@ adjust-cursor-height = 47%
         let config = parse_config(input).unwrap();
         assert_eq!(config.cursor_color, CursorColor::CellForeground);
         assert_eq!(config.cursor_text, CursorColor::CellBackground);
+    }
+
+    #[test]
+    fn test_parse_palette_entry() {
+        // Valid entries
+        assert_eq!(
+            parse_palette_entry("0=#ff0000"),
+            Some((0, Rgb { r: 255, g: 0, b: 0 }))
+        );
+        assert_eq!(
+            parse_palette_entry("15=#00ff00"),
+            Some((15, Rgb { r: 0, g: 255, b: 0 }))
+        );
+        assert_eq!(
+            parse_palette_entry("7 = #aabbcc"),
+            Some((
+                7,
+                Rgb {
+                    r: 0xAA,
+                    g: 0xBB,
+                    b: 0xCC
+                }
+            ))
+        );
+
+        // Invalid entries
+        assert!(parse_palette_entry("invalid").is_none());
+        assert!(parse_palette_entry("0=invalid").is_none());
+        assert!(parse_palette_entry("abc=#ff0000").is_none());
+    }
+
+    #[test]
+    fn test_parse_config_palette() {
+        let input = r#"
+palette = 0=#45475a
+palette = 1=#f38ba8
+palette = 15=#bac2de
+"#;
+        let config = parse_config(input).unwrap();
+        let palette = config.palette.unwrap();
+        assert_eq!(
+            palette[0],
+            Rgb {
+                r: 0x45,
+                g: 0x47,
+                b: 0x5a
+            }
+        );
+        assert_eq!(
+            palette[1],
+            Rgb {
+                r: 0xf3,
+                g: 0x8b,
+                b: 0xa8
+            }
+        );
+        assert_eq!(
+            palette[15],
+            Rgb {
+                r: 0xba,
+                g: 0xc2,
+                b: 0xde
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_config_selection_colors() {
+        let input = r#"
+selection-background = #585b70
+selection-foreground = #cdd6f4
+"#;
+        let config = parse_config(input).unwrap();
+        assert_eq!(
+            config.selection_background,
+            Some(Rgb {
+                r: 0x58,
+                g: 0x5b,
+                b: 0x70
+            })
+        );
+        assert_eq!(
+            config.selection_foreground,
+            Some(Rgb {
+                r: 0xcd,
+                g: 0xd6,
+                b: 0xf4
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_config_selection_colors_reset() {
+        let input = r#"
+selection-background = #ff0000
+selection-background =
+selection-foreground = #00ff00
+selection-foreground =
+"#;
+        let config = parse_config(input).unwrap();
+        assert!(config.selection_background.is_none());
+        assert!(config.selection_foreground.is_none());
+    }
+
+    #[test]
+    fn test_resolve_theme_name_simple() {
+        assert_eq!(
+            resolve_theme_name("Catppuccin Mocha"),
+            Some("Catppuccin Mocha")
+        );
+        assert_eq!(resolve_theme_name("  Dracula  "), Some("Dracula"));
+        assert_eq!(resolve_theme_name(""), None);
+    }
+
+    #[test]
+    fn test_resolve_theme_name_dark_light() {
+        // Test dark/light syntax - result depends on system appearance
+        let spec = "dark:Catppuccin Mocha,light:Catppuccin Latte";
+        let result = resolve_theme_name(spec);
+        // Should return one of the theme names
+        assert!(result == Some("Catppuccin Mocha") || result == Some("Catppuccin Latte"));
+    }
+
+    #[test]
+    fn test_resolve_theme_name_only_dark() {
+        let spec = "dark:Dracula";
+        let result = resolve_theme_name(spec);
+        // If system is dark, returns Dracula; otherwise falls back to Dracula anyway
+        assert_eq!(result, Some("Dracula"));
+    }
+
+    #[test]
+    fn test_resolve_theme_name_only_light() {
+        let spec = "light:Solarized Light";
+        let result = resolve_theme_name(spec);
+        // Returns Solarized Light (either as match or fallback)
+        assert_eq!(result, Some("Solarized Light"));
+    }
+
+    #[test]
+    fn test_apply_theme_contents() {
+        let theme_contents = r#"
+palette = 0=#45475a
+palette = 1=#f38ba8
+background = #1e1e2e
+foreground = #cdd6f4
+cursor-color = #f5e0dc
+cursor-text = #1e1e2e
+selection-background = #585b70
+selection-foreground = #cdd6f4
+"#;
+        let mut config = TerminalConfig::default();
+        apply_theme_contents(&mut config, theme_contents).unwrap();
+
+        assert_eq!(
+            config.default_bg,
+            Rgb {
+                r: 0x1e,
+                g: 0x1e,
+                b: 0x2e
+            }
+        );
+        assert_eq!(
+            config.default_fg,
+            Rgb {
+                r: 0xcd,
+                g: 0xd6,
+                b: 0xf4
+            }
+        );
+        assert_eq!(
+            config.cursor_color,
+            CursorColor::Color(Rgb {
+                r: 0xf5,
+                g: 0xe0,
+                b: 0xdc
+            })
+        );
+        assert_eq!(
+            config.cursor_text,
+            CursorColor::Color(Rgb {
+                r: 0x1e,
+                g: 0x1e,
+                b: 0x2e
+            })
+        );
+        assert_eq!(
+            config.selection_background,
+            Some(Rgb {
+                r: 0x58,
+                g: 0x5b,
+                b: 0x70
+            })
+        );
+        assert_eq!(
+            config.selection_foreground,
+            Some(Rgb {
+                r: 0xcd,
+                g: 0xd6,
+                b: 0xf4
+            })
+        );
+
+        let palette = config.palette.unwrap();
+        assert_eq!(
+            palette[0],
+            Rgb {
+                r: 0x45,
+                g: 0x47,
+                b: 0x5a
+            }
+        );
+        assert_eq!(
+            palette[1],
+            Rgb {
+                r: 0xf3,
+                g: 0x8b,
+                b: 0xa8
+            }
+        );
+    }
+
+    #[test]
+    fn test_apply_theme_contents_partial() {
+        // Theme files can have partial content
+        let theme_contents = r#"
+background = #282a36
+foreground = #f8f8f2
+"#;
+        let mut config = TerminalConfig::default();
+        apply_theme_contents(&mut config, theme_contents).unwrap();
+
+        assert_eq!(
+            config.default_bg,
+            Rgb {
+                r: 0x28,
+                g: 0x2a,
+                b: 0x36
+            }
+        );
+        assert_eq!(
+            config.default_fg,
+            Rgb {
+                r: 0xf8,
+                g: 0xf8,
+                b: 0xf2
+            }
+        );
+        // Other fields should remain at defaults
+        assert!(config.palette.is_none());
+        assert!(config.selection_background.is_none());
     }
 }

@@ -128,6 +128,22 @@ impl Terminal {
         }
     }
 
+    /// Set the default 16-color palette (colors 0-15).
+    pub fn set_default_palette(&mut self, palette: &[Rgb; 16]) {
+        let mut colors = [0u8; 48];
+        for (i, rgb) in palette.iter().enumerate() {
+            colors[i * 3] = rgb.r;
+            colors[i * 3 + 1] = rgb.g;
+            colors[i * 3 + 2] = rgb.b;
+        }
+        unsafe {
+            ghostty_vt_sys::ghostty_vt_terminal_set_default_palette(
+                self.ptr.as_ptr(),
+                colors.as_ptr(),
+            )
+        }
+    }
+
     pub fn feed(&mut self, bytes: &[u8]) -> Result<(), Error> {
         let rc = unsafe {
             ghostty_vt_sys::ghostty_vt_terminal_feed(self.ptr.as_ptr(), bytes.as_ptr(), bytes.len())

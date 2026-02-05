@@ -21,6 +21,13 @@ unsafe extern "C" {
         bg_b: u8,
     );
 
+    /// Set the default 16-color palette (colors 0-15).
+    /// The colors array must contain 48 bytes (16 colors * 3 bytes RGB each).
+    pub fn ghostty_vt_terminal_set_default_palette(
+        terminal: *mut core::ffi::c_void,
+        colors: *const u8,
+    );
+
     pub fn ghostty_vt_terminal_feed(
         terminal: *mut core::ffi::c_void,
         bytes: *const u8,

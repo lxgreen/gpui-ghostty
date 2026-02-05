@@ -279,6 +279,31 @@ export fn ghostty_vt_terminal_set_default_colors(
     handle.default_bg = .{ .r = bg_r, .g = bg_g, .b = bg_b };
 }
 
+/// Set the default 16-color palette (colors 0-15).
+/// Each color is represented as 3 bytes (RGB), so the array is 48 bytes total.
+export fn ghostty_vt_terminal_set_default_palette(
+    terminal_ptr: ?*anyopaque,
+    colors: ?[*]const u8,
+) callconv(.C) void {
+    if (terminal_ptr == null or colors == null) return;
+    const handle: *TerminalHandle = @ptrCast(@alignCast(terminal_ptr.?));
+    const color_data = colors.?;
+
+    // Set both the default palette and the current palette
+    for (0..16) |i| {
+        const offset = i * 3;
+        const rgb: terminal.color.RGB = .{
+            .r = color_data[offset],
+            .g = color_data[offset + 1],
+            .b = color_data[offset + 2],
+        };
+        handle.terminal.default_palette[i] = rgb;
+        handle.terminal.color_palette.colors[i] = rgb;
+    }
+    // Mark palette as dirty to trigger redraw
+    handle.terminal.flags.dirty.palette = true;
+}
+
 export fn ghostty_vt_terminal_feed(
     terminal_ptr: ?*anyopaque,
     bytes: [*]const u8,

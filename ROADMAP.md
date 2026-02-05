@@ -118,6 +118,7 @@ Deliver a maintainable Rust workspace that bootstraps an embedded terminal contr
 - [x] Fix alt-screen exit stale viewport: map terminal dirty.clear to dirty rows.
 - [x] Profile `pty_terminal` performance with Instruments and document bottlenecks (notes: `docs/perf_instruments.md`).
 - [x] Add support for `~/.config/ghostty/config` file (foreground, background, font-family, font-size).
+- [x] Add theme support (theme option, palette colors 0-15, selection colors, dark/light mode detection).
 
 ## Future Work
 

@@ -21,6 +21,12 @@ impl TerminalSession {
     pub fn new(config: TerminalConfig) -> Result<Self, Error> {
         let mut terminal = Terminal::new(config.cols, config.rows)?;
         terminal.set_default_colors(config.default_fg, config.default_bg);
+
+        // Apply custom palette if configured
+        if let Some(ref palette) = config.palette {
+            terminal.set_default_palette(palette);
+        }
+
         Ok(Self {
             config,
             terminal,

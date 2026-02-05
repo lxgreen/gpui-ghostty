@@ -1854,7 +1854,20 @@ impl Element for TerminalTextElement {
             .map(|sel| sel.range())
             .filter(|range| !range.is_empty())
             .map(|range| {
-                let highlight = hsla(0.58, 0.9, 0.55, 0.35);
+                // Get selection color from config, or use default highlight
+                let highlight = {
+                    let view = self.view.read(cx);
+                    view.session
+                        .config()
+                        .selection_background
+                        .map(|rgb| {
+                            // Use the configured selection background with some transparency
+                            let mut color = hsla_from_rgb(rgb);
+                            color.a = 0.5;
+                            color
+                        })
+                        .unwrap_or_else(|| hsla(0.58, 0.9, 0.55, 0.35))
+                };
                 let mut quads = Vec::new();
 
                 for (row, line) in shaped_lines.iter().enumerate() {
