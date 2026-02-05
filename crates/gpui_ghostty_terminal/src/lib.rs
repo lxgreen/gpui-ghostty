@@ -6,7 +6,9 @@ mod session;
 pub mod view;
 
 pub use config::{CursorColor, DEFAULT_PALETTE, TerminalConfig};
-pub use config_file::{ConfigError, load_config, load_config_from_path};
+pub use config_file::{
+    ConfigError, load_config, load_config_from_path, reload_theme_for_appearance,
+};
 pub use font::{default_terminal_font, default_terminal_font_features, terminal_font};
 pub use ghostty_vt::CursorStyle;
 pub use session::TerminalSession;

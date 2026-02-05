@@ -129,6 +129,11 @@ pub struct TerminalConfig {
     pub selection_background: Option<Rgb>,
     /// Selection foreground color. If `None`, keeps original text color.
     pub selection_foreground: Option<Rgb>,
+
+    /// Raw theme specification for dynamic dark/light mode switching.
+    /// E.g., `"dark:Catppuccin Mocha,light:Catppuccin Latte"`.
+    /// Used internally to reload theme when system appearance changes.
+    pub theme_spec: Option<String>,
 }
 
 impl Default for TerminalConfig {
@@ -158,6 +163,7 @@ impl Default for TerminalConfig {
             palette: None,
             selection_background: None,
             selection_foreground: None,
+            theme_spec: None,
         }
     }
 }

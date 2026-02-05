@@ -290,6 +290,18 @@ impl TerminalView {
         &self.focus_handle
     }
 
+    /// Get a reference to the terminal session.
+    pub fn session(&self) -> &TerminalSession {
+        &self.session
+    }
+
+    /// Get a mutable reference to the terminal session.
+    ///
+    /// Use this to update theme colors when system appearance changes.
+    pub fn session_mut(&mut self) -> &mut TerminalSession {
+        &mut self.session
+    }
+
     pub fn new_with_input(
         session: TerminalSession,
         focus_handle: FocusHandle,

@@ -359,6 +359,27 @@ impl TerminalSession {
         &self.config
     }
 
+    /// Returns a mutable reference to the terminal configuration.
+    ///
+    /// Use this to update theme colors when system appearance changes.
+    /// After modifying the config, call `apply_theme_colors()` to update the terminal.
+    pub fn config_mut(&mut self) -> &mut TerminalConfig {
+        &mut self.config
+    }
+
+    /// Apply the current config's theme colors to the terminal.
+    ///
+    /// Call this after modifying the config via `config_mut()` to update
+    /// the terminal's default colors and palette.
+    pub fn apply_theme_colors(&mut self) {
+        self.terminal
+            .set_default_colors(self.config.default_fg, self.config.default_bg);
+
+        if let Some(ref palette) = self.config.palette {
+            self.terminal.set_default_palette(palette);
+        }
+    }
+
     pub fn scroll_viewport(&mut self, delta_lines: i32) -> Result<(), Error> {
         self.terminal.scroll_viewport(delta_lines)
     }

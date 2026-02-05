@@ -68,6 +68,91 @@ pub fn load_config_from_path(path: &std::path::Path) -> Result<TerminalConfig, C
     parse_config(&contents)
 }
 
+/// Reload theme colors for a config based on explicit dark mode setting.
+///
+/// This is useful when the system appearance changes and you want to switch
+/// between dark/light theme variants. Only affects configs with a `theme_spec`
+/// that contains `dark:` or `light:` variants.
+///
+/// Returns `true` if the theme was reloaded, `false` if no theme spec exists
+/// or the theme spec doesn't have dark/light variants.
+pub fn reload_theme_for_appearance(config: &mut TerminalConfig, is_dark: bool) -> bool {
+    let Some(theme_spec) = config.theme_spec.clone() else {
+        return false;
+    };
+
+    // Only reload if the theme spec has dark/light variants
+    if !theme_spec.contains(':') {
+        return false;
+    }
+
+    // Resolve the theme name for the given appearance
+    let theme_name = resolve_theme_name_for_appearance(&theme_spec, is_dark);
+    let Some(theme_name) = theme_name else {
+        return false;
+    };
+    // Clone to avoid borrow issues
+    let theme_name = theme_name.to_string();
+
+    // Reset theme-related fields before applying new theme
+    config.default_fg = Rgb {
+        r: 0xFF,
+        g: 0xFF,
+        b: 0xFF,
+    };
+    config.default_bg = Rgb {
+        r: 0x00,
+        g: 0x00,
+        b: 0x00,
+    };
+    config.palette = None;
+    config.selection_background = None;
+    config.selection_foreground = None;
+    config.cursor_color = CursorColor::CellForeground;
+    config.cursor_text = CursorColor::CellBackground;
+
+    // Load the theme
+    load_theme(config, &theme_name).is_ok()
+}
+
+/// Resolve theme name for a specific appearance (dark or light).
+fn resolve_theme_name_for_appearance(theme_spec: &str, is_dark: bool) -> Option<&str> {
+    let theme_spec = theme_spec.trim();
+    if theme_spec.is_empty() {
+        return None;
+    }
+
+    // Check for dark:/light: syntax
+    if theme_spec.contains(':') {
+        for part in theme_spec.split(',') {
+            let part = part.trim();
+            if let Some(name) = part.strip_prefix("dark:")
+                && is_dark
+            {
+                return Some(name.trim());
+            } else if let Some(name) = part.strip_prefix("light:")
+                && !is_dark
+            {
+                return Some(name.trim());
+            }
+        }
+        // If no matching variant found, try to use the first one
+        for part in theme_spec.split(',') {
+            let part = part.trim();
+            if let Some(name) = part
+                .strip_prefix("dark:")
+                .or_else(|| part.strip_prefix("light:"))
+            {
+                return Some(name.trim());
+            }
+        }
+        None
+    } else {
+        // Simple theme name - no appearance-specific variant
+        Some(theme_spec)
+    }
+}
+
 /// Find the config file path following Ghostty's search order.
 fn find_config_file() -> Option<PathBuf> {
     // Try XDG_CONFIG_HOME first
@@ -496,11 +581,13 @@ fn apply_config_option(
             }
         }
         "theme" => {
-            if !value.is_empty()
-                && let Some(theme_name) = resolve_theme_name(value)
-            {
-                // Silently ignore theme loading errors (theme file not found, etc.)
-                let _ = load_theme(config, theme_name);
+            if !value.is_empty() {
+                // Store the raw theme spec for dynamic appearance switching
+                config.theme_spec = Some(value.to_string());
+                if let Some(theme_name) = resolve_theme_name(value) {
+                    // Silently ignore theme loading errors (theme file not found, etc.)
+                    let _ = load_theme(config, theme_name);
+                }
             }
         }
         "palette" => {
