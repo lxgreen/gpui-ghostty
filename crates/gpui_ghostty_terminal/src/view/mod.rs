@@ -190,6 +190,7 @@ fn url_at_column_in_line(line: &str, col: u16) -> Option<String> {
 }
 
 type TerminalSendFn = dyn Fn(&[u8]) + Send + Sync + 'static;
+type TerminalResizeFn = dyn Fn(u16, u16) + Send + Sync + 'static;
 
 pub struct TerminalInput {
     send: Box<TerminalSendFn>,
@@ -207,6 +208,24 @@ impl TerminalInput {
     }
 }
 
+/// Callback for terminal resize events.
+/// Called with (cols, rows) when the terminal grid size changes.
+pub struct TerminalResizeCallback {
+    callback: Box<TerminalResizeFn>,
+}
+
+impl TerminalResizeCallback {
+    pub fn new(callback: impl Fn(u16, u16) + Send + Sync + 'static) -> Self {
+        Self {
+            callback: Box::new(callback),
+        }
+    }
+
+    fn call(&self, cols: u16, rows: u16) {
+        (self.callback)(cols, rows);
+    }
+}
+
 pub struct TerminalView {
     session: TerminalSession,
     viewport_lines: Vec<String>,
@@ -219,6 +238,7 @@ pub struct TerminalView {
     focus_handle: FocusHandle,
     last_window_title: Option<String>,
     input: Option<TerminalInput>,
+    resize_callback: Option<TerminalResizeCallback>,
     pending_output: Vec<u8>,
     pending_refresh: bool,
     selection: Option<ByteSelection>,
@@ -258,6 +278,7 @@ impl TerminalView {
             focus_handle,
             last_window_title: None,
             input: None,
+            resize_callback: None,
             pending_output: Vec::new(),
             pending_refresh: false,
             selection: None,
@@ -319,6 +340,7 @@ impl TerminalView {
             focus_handle,
             last_window_title: None,
             input: Some(input),
+            resize_callback: None,
             pending_output: Vec::new(),
             pending_refresh: false,
             selection: None,
@@ -328,6 +350,12 @@ impl TerminalView {
             font_size: None,
         }
         .with_refreshed_viewport()
+    }
+
+    /// Set a callback to be invoked when the terminal grid size changes.
+    /// The callback receives (cols, rows) and should resize the PTY accordingly.
+    pub fn set_resize_callback(&mut self, callback: TerminalResizeCallback) {
+        self.resize_callback = Some(callback);
     }
 
     /// Set the font used for terminal rendering.
@@ -1626,6 +1654,36 @@ impl Element for TerminalTextElement {
         let run_color = style.color;
 
         let cell_width = cell_metrics(window, &font, configured_font_size).map(|(w, _)| px(w));
+
+        // Auto-resize: calculate grid size from actual element bounds
+        if let Some((cell_w, cell_h)) = cell_metrics(window, &font, configured_font_size) {
+            let width = f32::from(bounds.size.width);
+            let height = f32::from(bounds.size.height);
+            let cols = (width / cell_w).floor().max(1.0) as u16;
+            let rows = (height / cell_h).floor().max(1.0) as u16;
+
+            let (current_cols, current_rows, resize_callback) = {
+                let view = self.view.read(cx);
+                (
+                    view.session.cols(),
+                    view.session.rows(),
+                    view.resize_callback.as_ref(),
+                )
+            };
+
+            if cols != current_cols || rows != current_rows {
+                // Notify external callback (e.g., PTY resize) if set
+                if let Some(callback) = resize_callback {
+                    callback.call(cols, rows);
+                }
+                // Resize the internal terminal session
+                self.view.update(cx, |view, _cx| {
+                    let _ = view.session.resize(cols, rows);
+                    view.sync_viewport_scroll_tracking();
+                    view.pending_refresh = true;
+                });
+            }
+        }
 
         self.view.update(cx, |view, _cx| {
             if view.viewport_lines.is_empty() {

@@ -1,10 +1,9 @@
 use std::io::{Read, Write};
-use std::sync::Arc;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use gpui::{App, AppContext, Application, KeyBinding, SharedString, WindowOptions, px};
+use gpui::{App, AppContext, Application, KeyBinding, WindowOptions, px};
 use gpui_ghostty_terminal::view::{Copy, Paste, SelectAll, TerminalInput, TerminalView};
 use gpui_ghostty_terminal::{TerminalConfig, TerminalSession, load_config, terminal_font};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
@@ -31,7 +30,7 @@ fn main() {
                 })
                 .expect("openpty failed");
 
-            let master: Arc<dyn portable_pty::MasterPty + Send> = Arc::from(pty_pair.master);
+            let master = pty_pair.master;
 
             // Use command from config, or fall back to $SHELL, or /bin/zsh
             let shell_cmd = config.command.clone().unwrap_or_else(|| {
@@ -71,6 +70,7 @@ fn main() {
 
             let (stdin_tx, stdin_rx) = mpsc::channel::<Vec<u8>>();
             let (stdout_tx, stdout_rx) = mpsc::channel::<Vec<u8>>();
+            let (resize_tx, resize_rx) = mpsc::channel::<(u16, u16)>();
 
             if let Ok(cmd) = std::env::var("GPUI_GHOSTTY_PTY_DEMO_COMMAND") {
                 let stdin_tx = stdin_tx.clone();
@@ -105,9 +105,27 @@ fn main() {
                 }
             });
 
-            // Clone config for use in closures
-            let config_for_resize = config.clone();
+            // Handle PTY resize events in a separate thread
+            // Move the master into this thread since it owns the resize capability
+            thread::spawn(move || {
+                while let Ok((cols, rows)) = resize_rx.recv() {
+                    let _ = master.resize(PtySize {
+                        rows,
+                        cols,
+                        pixel_width: 0,
+                        pixel_height: 0,
+                    });
+                }
+            });
+
+            // Clone config for use in view setup
             let config_for_view = config.clone();
+
+            // Set up PTY resize callback
+            let resize_callback =
+                gpui_ghostty_terminal::view::TerminalResizeCallback::new(move |cols, rows| {
+                    let _ = resize_tx.send((cols, rows));
+                });
 
             let view = cx.new(|cx| {
                 let focus_handle = cx.focus_handle();
@@ -125,62 +143,10 @@ fn main() {
                 if let Some(size) = config_for_view.font_size {
                     view.set_font_size(px(size));
                 }
+                // Set resize callback to notify PTY of size changes
+                view.set_resize_callback(resize_callback);
                 view
             });
-
-            let master_for_resize = master.clone();
-            let subscription = view.update(cx, |_, cx| {
-                cx.observe_window_bounds(window, move |this, window, cx| {
-                    let size = window.viewport_size();
-                    let width = f32::from(size.width);
-                    let height = f32::from(size.height);
-
-                    let mut style = window.text_style();
-                    let font = terminal_font(&config_for_resize);
-                    style.font_family = font.family.clone();
-                    style.font_features = gpui_ghostty_terminal::default_terminal_font_features();
-                    style.font_fallbacks = font.fallbacks.clone();
-
-                    // Use configured font size if available
-                    if let Some(font_size) = config_for_resize.font_size {
-                        style.font_size = gpui::AbsoluteLength::Pixels(px(font_size)).into();
-                    }
-
-                    let rem_size = window.rem_size();
-                    let font_size = style.font_size.to_pixels(rem_size);
-                    let line_height = style.line_height.to_pixels(style.font_size, rem_size);
-
-                    let run = style.to_run(1);
-                    let Ok(lines) = window.text_system().shape_text(
-                        SharedString::from("M"),
-                        font_size,
-                        &[run],
-                        None,
-                        Some(1),
-                    ) else {
-                        return;
-                    };
-                    let Some(line) = lines.first() else {
-                        return;
-                    };
-
-                    let cell_width = f32::from(line.width()).max(1.0);
-                    let cell_height = f32::from(line_height).max(1.0);
-
-                    let cols = (width / cell_width).floor().max(1.0) as u16;
-                    let rows = (height / cell_height).floor().max(1.0) as u16;
-
-                    let _ = master_for_resize.resize(PtySize {
-                        rows,
-                        cols,
-                        pixel_width: 0,
-                        pixel_height: 0,
-                    });
-
-                    this.resize_terminal(cols, rows, cx);
-                })
-            });
-            subscription.detach();
 
             let view_for_task = view.clone();
             window
