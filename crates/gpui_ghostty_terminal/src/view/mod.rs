@@ -2212,8 +2212,10 @@ impl Render for TerminalView {
         }
 
         div()
-            .size_full()
-            .flex()
+            .w_full()
+            .h_full()
+            .min_w_full()
+            .min_h_full()
             .track_focus(&self.focus_handle)
             .key_context(KEY_CONTEXT)
             .on_action(cx.listener(Self::on_copy))
