@@ -1,7 +1,8 @@
 //! Ghostty config file parser.
 //!
-//! Loads configuration from `~/.config/ghostty/config` (or `$XDG_CONFIG_HOME/ghostty/config`)
-//! using the Ghostty key-value format. Also supports loading themes from theme files.
+//! Loads configuration from `~/.config/Job/terminal/config` (with fallback to
+//! `~/.config/ghostty/config`) using the Ghostty key-value format.
+//! Also supports loading themes from theme files.
 
 use std::fs;
 use std::io;
@@ -50,11 +51,13 @@ impl From<io::Error> for ConfigError {
     }
 }
 
-/// Load configuration from the default Ghostty config file locations.
+/// Load configuration from the default config file locations.
 ///
 /// Searches in order:
-/// 1. `$XDG_CONFIG_HOME/ghostty/config` (if `XDG_CONFIG_HOME` is set)
-/// 2. `~/.config/ghostty/config`
+/// 1. `$XDG_CONFIG_HOME/Job/terminal/config` (if `XDG_CONFIG_HOME` is set)
+/// 2. `~/.config/Job/terminal/config`
+/// 3. `$XDG_CONFIG_HOME/ghostty/config` (fallback)
+/// 4. `~/.config/ghostty/config` (fallback)
 ///
 /// Returns `Err(ConfigError::NotFound)` if no config file exists.
 pub fn load_config() -> Result<TerminalConfig, ConfigError> {
@@ -66,6 +69,93 @@ pub fn load_config() -> Result<TerminalConfig, ConfigError> {
 pub fn load_config_from_path(path: &std::path::Path) -> Result<TerminalConfig, ConfigError> {
     let contents = fs::read_to_string(path)?;
     parse_config(&contents)
+}
+
+/// Save theme configuration to the Ghostty config file.
+///
+/// Creates the config file and directory if they don't exist.
+/// Updates an existing `theme = ...` line or appends a new one.
+///
+/// # Arguments
+/// * `dark_theme` - Theme name for dark mode
+/// * `light_theme` - Theme name for light mode
+///
+/// # Example
+/// ```ignore
+/// save_theme_to_config("catppuccin-mocha", "catppuccin-latte")?;
+/// // Writes: theme = dark:catppuccin-mocha,light:catppuccin-latte
+/// ```
+pub fn save_theme_to_config(dark_theme: &str, light_theme: &str) -> Result<(), ConfigError> {
+    let config_path = find_or_create_config_file()?;
+    let contents = fs::read_to_string(&config_path).unwrap_or_default();
+    let new_contents = update_theme_line(&contents, dark_theme, light_theme);
+    fs::write(&config_path, new_contents)?;
+    Ok(())
+}
+
+/// Find the config file path, creating the directory and file if needed.
+/// Uses `~/.config/Job/terminal/config` for Job app.
+fn find_or_create_config_file() -> Result<PathBuf, ConfigError> {
+    // Try to find existing config file
+    if let Some(path) = find_config_file() {
+        return Ok(path);
+    }
+
+    // Create config directory and file in Job's config directory
+    let config_dir = if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
+        PathBuf::from(xdg_config).join("Job/terminal")
+    } else if let Some(home) = home_dir() {
+        home.join(".config/Job/terminal")
+    } else {
+        return Err(ConfigError::Io(io::Error::new(
+            io::ErrorKind::NotFound,
+            "Could not determine home directory",
+        )));
+    };
+
+    // Create directory if it doesn't exist
+    fs::create_dir_all(&config_dir)?;
+
+    let config_path = config_dir.join("config");
+
+    // Create empty config file if it doesn't exist
+    if !config_path.exists() {
+        fs::write(&config_path, "")?;
+    }
+
+    Ok(config_path)
+}
+
+/// Update or add the theme line in config contents.
+fn update_theme_line(contents: &str, dark_theme: &str, light_theme: &str) -> String {
+    let theme_value = format!("dark:{},light:{}", dark_theme, light_theme);
+    let new_line = format!("theme = {}", theme_value);
+
+    let mut lines: Vec<&str> = contents.lines().collect();
+    let mut found = false;
+
+    // Find and replace existing theme line
+    for line in &mut lines {
+        let trimmed = line.trim();
+        if trimmed.starts_with("theme") && trimmed.contains('=') {
+            *line = Box::leak(new_line.clone().into_boxed_str());
+            found = true;
+            break;
+        }
+    }
+
+    if found {
+        lines.join("\n")
+    } else {
+        // Append new theme line
+        if contents.is_empty() {
+            new_line
+        } else if contents.ends_with('\n') {
+            format!("{}{}\n", contents, new_line)
+        } else {
+            format!("{}\n{}\n", contents, new_line)
+        }
+    }
 }
 
 /// Reload theme colors for a config based on explicit dark mode setting.
@@ -153,18 +243,29 @@ fn resolve_theme_name_for_appearance(theme_spec: &str, is_dark: bool) -> Option<
     }
 }
 
-/// Find the config file path following Ghostty's search order.
+/// Find the config file path.
+/// Searches for Job's terminal config first, then falls back to Ghostty's config.
 fn find_config_file() -> Option<PathBuf> {
-    // Try XDG_CONFIG_HOME first
+    // Try XDG_CONFIG_HOME first - Job's config
     if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
+        let path = PathBuf::from(&xdg_config).join("Job/terminal/config");
+        if path.exists() {
+            return Some(path);
+        }
+        // Fall back to Ghostty's config
         let path = PathBuf::from(xdg_config).join("ghostty/config");
         if path.exists() {
             return Some(path);
         }
     }
 
-    // Fall back to ~/.config/ghostty/config
+    // Try ~/.config - Job's config first
     if let Some(home) = home_dir() {
+        let path = home.join(".config/Job/terminal/config");
+        if path.exists() {
+            return Some(path);
+        }
+        // Fall back to Ghostty's config
         let path = home.join(".config/ghostty/config");
         if path.exists() {
             return Some(path);
@@ -613,7 +714,10 @@ fn apply_config_option(
                         }
                     }
                 } else {
-                    eprintln!("[theme] Failed to resolve theme name from spec: {:?}", value);
+                    eprintln!(
+                        "[theme] Failed to resolve theme name from spec: {:?}",
+                        value
+                    );
                 }
             }
         }
@@ -1222,5 +1326,40 @@ foreground = #f8f8f2
         // Other fields should remain at defaults
         assert!(config.palette.is_none());
         assert!(config.selection_background.is_none());
+    }
+
+    #[test]
+    fn test_update_theme_line_empty_config() {
+        let result = update_theme_line("", "catppuccin-mocha", "catppuccin-latte");
+        assert_eq!(
+            result,
+            "theme = dark:catppuccin-mocha,light:catppuccin-latte"
+        );
+    }
+
+    #[test]
+    fn test_update_theme_line_append() {
+        let input = "font-family = JetBrains Mono\nfont-size = 14";
+        let result = update_theme_line(input, "dracula", "nord-light");
+        assert!(result.contains("font-family = JetBrains Mono"));
+        assert!(result.contains("theme = dark:dracula,light:nord-light"));
+    }
+
+    #[test]
+    fn test_update_theme_line_replace() {
+        let input = "font-family = JetBrains Mono\ntheme = old-theme\nfont-size = 14";
+        let result = update_theme_line(input, "gruvbox-dark", "gruvbox-light");
+        assert!(result.contains("theme = dark:gruvbox-dark,light:gruvbox-light"));
+        assert!(!result.contains("old-theme"));
+        // Should still have other settings
+        assert!(result.contains("font-family = JetBrains Mono"));
+        assert!(result.contains("font-size = 14"));
+    }
+
+    #[test]
+    fn test_update_theme_line_replace_dark_light_spec() {
+        let input = "theme = dark:catppuccin-mocha,light:catppuccin-latte";
+        let result = update_theme_line(input, "tokyonight", "tokyonight-day");
+        assert_eq!(result, "theme = dark:tokyonight,light:tokyonight-day");
     }
 }
