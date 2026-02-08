@@ -227,9 +227,20 @@ fn find_theme_file(name: &str) -> Option<PathBuf> {
 
 /// Load and apply a theme by name.
 ///
+/// Searches for themes in this order:
+/// 1. Embedded themes (bundled in the binary)
+/// 2. User config directory (`~/.config/ghostty/themes/`)
+/// 3. System locations (Ghostty.app bundle, `/usr/share/ghostty/themes/`)
+///
 /// Returns `Ok(())` if the theme was loaded successfully, or `Err` if the theme
 /// file was not found or could not be parsed.
 fn load_theme(config: &mut TerminalConfig, name: &str) -> Result<(), ConfigError> {
+    // First, try embedded themes (no filesystem access needed)
+    if let Some(contents) = crate::themes::get_embedded_theme(name) {
+        return apply_theme_contents(config, contents);
+    }
+
+    // Fall back to filesystem-based themes
     let path = find_theme_file(name).ok_or(ConfigError::NotFound)?;
     let contents = fs::read_to_string(&path)?;
     apply_theme_contents(config, &contents)
