@@ -402,16 +402,19 @@ fn resolve_theme_name(theme_spec: &str) -> Option<&str> {
 #[cfg(target_os = "macos")]
 fn is_system_dark_mode() -> bool {
     use std::process::Command;
-    // Use defaults read to check macOS appearance
+    // Use defaults read to check macOS appearance.
+    // Note: AppleInterfaceStyle key only exists when Dark mode is active.
+    // If the key doesn't exist (exit code non-zero), the system is in Light mode.
     Command::new("defaults")
         .args(["read", "-g", "AppleInterfaceStyle"])
         .output()
         .map(|output| {
-            String::from_utf8_lossy(&output.stdout)
-                .trim()
-                .eq_ignore_ascii_case("dark")
+            output.status.success()
+                && String::from_utf8_lossy(&output.stdout)
+                    .trim()
+                    .eq_ignore_ascii_case("dark")
         })
-        .unwrap_or(true) // Default to dark if detection fails
+        .unwrap_or(false) // Default to light if detection fails
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -595,9 +598,22 @@ fn apply_config_option(
             if !value.is_empty() {
                 // Store the raw theme spec for dynamic appearance switching
                 config.theme_spec = Some(value.to_string());
+                eprintln!("[theme] Parsing theme spec: {:?}", value);
                 if let Some(theme_name) = resolve_theme_name(value) {
-                    // Silently ignore theme loading errors (theme file not found, etc.)
-                    let _ = load_theme(config, theme_name);
+                    eprintln!("[theme] Resolved theme name: {:?}", theme_name);
+                    match load_theme(config, theme_name) {
+                        Ok(()) => {
+                            eprintln!(
+                                "[theme] Theme loaded successfully: bg={:?}, fg={:?}",
+                                config.default_bg, config.default_fg
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("[theme] Failed to load theme {:?}: {}", theme_name, e);
+                        }
+                    }
+                } else {
+                    eprintln!("[theme] Failed to resolve theme name from spec: {:?}", value);
                 }
             }
         }
