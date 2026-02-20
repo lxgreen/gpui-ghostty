@@ -1392,11 +1392,15 @@ struct TextRunKey {
 }
 
 fn hsla_from_rgb(rgb: Rgb) -> gpui::Hsla {
+    hsla_from_rgb_with_alpha(rgb, 1.0)
+}
+
+fn hsla_from_rgb_with_alpha(rgb: Rgb, alpha: f32) -> gpui::Hsla {
     let rgba = gpui::Rgba {
         r: rgb.r as f32 / 255.0,
         g: rgb.g as f32 / 255.0,
         b: rgb.b as f32 / 255.0,
-        a: 1.0,
+        a: alpha,
     };
     rgba.into()
 }
@@ -2133,8 +2137,17 @@ impl Element for TerminalTextElement {
         );
 
         window.paint_layer(bounds, |window| {
-            let default_bg = { self.view.read(cx).session.default_background() };
-            window.paint_quad(fill(bounds, hsla_from_rgb(default_bg)));
+            let (default_bg, bg_opacity) = {
+                let view = self.view.read(cx);
+                (
+                    view.session.default_background(),
+                    view.session.background_opacity(),
+                )
+            };
+            window.paint_quad(fill(
+                bounds,
+                hsla_from_rgb_with_alpha(default_bg, bg_opacity),
+            ));
 
             for quad in prepaint.background_quads.drain(..) {
                 window.paint_quad(quad);
@@ -2232,7 +2245,10 @@ impl Render for TerminalView {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up(MouseButton::Middle, cx.listener(Self::on_mouse_up))
             .on_mouse_up(MouseButton::Right, cx.listener(Self::on_mouse_up))
-            .bg(hsla_from_rgb(self.session.default_background()))
+            .bg(hsla_from_rgb_with_alpha(
+                self.session.default_background(),
+                self.session.background_opacity(),
+            ))
             .text_color(hsla_from_rgb(self.session.default_foreground()))
             .font(self.font.clone())
             .whitespace_nowrap()

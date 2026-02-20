@@ -59,6 +59,10 @@ impl TerminalSession {
         self.config.default_bg
     }
 
+    pub fn background_opacity(&self) -> f32 {
+        self.config.background_opacity
+    }
+
     pub fn bracketed_paste_enabled(&self) -> bool {
         self.bracketed_paste_enabled
     }

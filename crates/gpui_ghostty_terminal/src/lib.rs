@@ -16,5 +16,23 @@ pub use ghostty_vt::{CursorStyle, Rgb};
 pub use session::TerminalSession;
 pub use themes::{get_embedded_theme, list_embedded_themes};
 
+use gpui::{WindowBackgroundAppearance, WindowOptions};
+
+/// Build `WindowOptions` with the appropriate background appearance for the given config.
+///
+/// When `background_opacity < 1.0`, uses `WindowBackgroundAppearance::Blurred` to enable
+/// a frosted-glass effect on macOS. Otherwise uses `Opaque`.
+pub fn window_options_for_config(config: &TerminalConfig) -> WindowOptions {
+    let background = if config.background_opacity < 1.0 {
+        WindowBackgroundAppearance::Blurred
+    } else {
+        WindowBackgroundAppearance::Opaque
+    };
+    WindowOptions {
+        window_background: background,
+        ..Default::default()
+    }
+}
+
 #[cfg(test)]
 mod tests;

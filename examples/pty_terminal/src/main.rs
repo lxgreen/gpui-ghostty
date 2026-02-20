@@ -3,9 +3,11 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use gpui::{App, AppContext, Application, KeyBinding, WindowOptions, px};
+use gpui::{App, AppContext, Application, KeyBinding, px};
 use gpui_ghostty_terminal::view::{Copy, Paste, SelectAll, TerminalInput, TerminalView};
-use gpui_ghostty_terminal::{TerminalConfig, TerminalSession, load_config, terminal_font};
+use gpui_ghostty_terminal::{
+    TerminalConfig, TerminalSession, load_config, terminal_font, window_options_for_config,
+};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 fn main() {
@@ -16,10 +18,11 @@ fn main() {
             KeyBinding::new("cmd-v", Paste, None),
         ]);
 
-        cx.open_window(WindowOptions::default(), |window, cx| {
-            // Load config from ~/.config/ghostty/config, falling back to defaults
-            let config = load_config().unwrap_or_else(|_| TerminalConfig::default());
+        // Load config before opening window so we can set background appearance
+        let config = load_config().unwrap_or_else(|_| TerminalConfig::default());
+        let options = window_options_for_config(&config);
 
+        cx.open_window(options, |window, cx| {
             let pty_system = native_pty_system();
             let pty_pair = pty_system
                 .openpty(PtySize {

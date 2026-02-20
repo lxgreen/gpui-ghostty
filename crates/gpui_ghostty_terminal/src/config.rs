@@ -134,6 +134,10 @@ pub struct TerminalConfig {
     /// E.g., `"dark:Catppuccin Mocha,light:Catppuccin Latte"`.
     /// Used internally to reload theme when system appearance changes.
     pub theme_spec: Option<String>,
+
+    /// Background opacity (0.0 = fully transparent, 1.0 = fully opaque).
+    /// Values below 1.0 enable a frosted-glass blur effect behind the window on macOS.
+    pub background_opacity: f32,
 }
 
 impl Default for TerminalConfig {
@@ -164,6 +168,7 @@ impl Default for TerminalConfig {
             selection_background: None,
             selection_foreground: None,
             theme_spec: None,
+            background_opacity: 1.0,
         }
     }
 }

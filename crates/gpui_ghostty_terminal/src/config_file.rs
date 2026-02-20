@@ -753,6 +753,17 @@ fn apply_config_option(
                     })?);
             }
         }
+        "background-opacity" => {
+            if value.is_empty() {
+                config.background_opacity = 1.0;
+            } else {
+                let opacity = value.parse::<f32>().map_err(|_| ConfigError::Parse {
+                    line: line_num,
+                    message: format!("invalid background opacity: {}", value),
+                })?;
+                config.background_opacity = opacity.clamp(0.0, 1.0);
+            }
+        }
         // Unknown keys are silently ignored (matching Ghostty behavior for forward compatibility)
         _ => {}
     }
@@ -1361,5 +1372,53 @@ foreground = #f8f8f2
         let input = "theme = dark:catppuccin-mocha,light:catppuccin-latte";
         let result = update_theme_line(input, "tokyonight", "tokyonight-day");
         assert_eq!(result, "theme = dark:tokyonight,light:tokyonight-day");
+    }
+
+    #[test]
+    fn test_parse_config_background_opacity() {
+        let input = "background-opacity = 0.85";
+        let config = parse_config(input).unwrap();
+        assert!((config.background_opacity - 0.85).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_config_background_opacity_zero() {
+        let input = "background-opacity = 0";
+        let config = parse_config(input).unwrap();
+        assert!((config.background_opacity).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_config_background_opacity_clamped_high() {
+        let input = "background-opacity = 1.5";
+        let config = parse_config(input).unwrap();
+        assert!((config.background_opacity - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_config_background_opacity_clamped_low() {
+        let input = "background-opacity = -0.5";
+        let config = parse_config(input).unwrap();
+        assert!((config.background_opacity).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_config_background_opacity_reset() {
+        let input = "background-opacity = 0.5\nbackground-opacity =";
+        let config = parse_config(input).unwrap();
+        assert!((config.background_opacity - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_config_background_opacity_invalid() {
+        let input = "background-opacity = abc";
+        let result = parse_config(input);
+        assert!(matches!(result, Err(ConfigError::Parse { line: 1, .. })));
+    }
+
+    #[test]
+    fn test_parse_config_background_opacity_default() {
+        let config = parse_config("").unwrap();
+        assert!((config.background_opacity - 1.0).abs() < 0.001);
     }
 }
