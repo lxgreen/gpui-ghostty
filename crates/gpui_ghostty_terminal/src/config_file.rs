@@ -1,8 +1,7 @@
-//! Ghostty config file parser.
+//! Terminal config file parser.
 //!
-//! Loads configuration from `~/.config/Job/terminal/config` (with fallback to
-//! `~/.config/ghostty/config`) using the Ghostty key-value format.
-//! Also supports loading themes from theme files.
+//! Loads configuration from `~/.config/Job/terminal/config` using the
+//! Ghostty key-value format. Also supports loading themes from theme files.
 
 use std::fs;
 use std::io;
@@ -56,8 +55,6 @@ impl From<io::Error> for ConfigError {
 /// Searches in order:
 /// 1. `$XDG_CONFIG_HOME/Job/terminal/config` (if `XDG_CONFIG_HOME` is set)
 /// 2. `~/.config/Job/terminal/config`
-/// 3. `$XDG_CONFIG_HOME/ghostty/config` (fallback)
-/// 4. `~/.config/ghostty/config` (fallback)
 ///
 /// Returns `Err(ConfigError::NotFound)` if no config file exists.
 pub fn load_config() -> Result<TerminalConfig, ConfigError> {
@@ -244,29 +241,17 @@ fn resolve_theme_name_for_appearance(theme_spec: &str, is_dark: bool) -> Option<
 }
 
 /// Find the config file path.
-/// Searches for Job's terminal config first, then falls back to Ghostty's config.
+/// Only searches for Job's own terminal config.
 fn find_config_file() -> Option<PathBuf> {
-    // Try XDG_CONFIG_HOME first - Job's config
     if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-        let path = PathBuf::from(&xdg_config).join("Job/terminal/config");
-        if path.exists() {
-            return Some(path);
-        }
-        // Fall back to Ghostty's config
-        let path = PathBuf::from(xdg_config).join("ghostty/config");
+        let path = PathBuf::from(xdg_config).join("Job/terminal/config");
         if path.exists() {
             return Some(path);
         }
     }
 
-    // Try ~/.config - Job's config first
     if let Some(home) = home_dir() {
         let path = home.join(".config/Job/terminal/config");
-        if path.exists() {
-            return Some(path);
-        }
-        // Fall back to Ghostty's config
-        let path = home.join(".config/ghostty/config");
         if path.exists() {
             return Some(path);
         }
