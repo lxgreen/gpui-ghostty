@@ -2245,10 +2245,6 @@ impl Render for TerminalView {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up(MouseButton::Middle, cx.listener(Self::on_mouse_up))
             .on_mouse_up(MouseButton::Right, cx.listener(Self::on_mouse_up))
-            .bg(hsla_from_rgb_with_alpha(
-                self.session.default_background(),
-                self.session.background_opacity(),
-            ))
             .text_color(hsla_from_rgb(self.session.default_foreground()))
             .font(self.font.clone())
             .whitespace_nowrap()
