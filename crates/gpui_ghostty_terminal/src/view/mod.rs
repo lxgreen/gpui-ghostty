@@ -18,6 +18,9 @@ static KEY_BINDINGS: Once = Once::new();
 fn ensure_key_bindings(cx: &mut App) {
     KEY_BINDINGS.call_once(|| {
         cx.bind_keys([
+            KeyBinding::new("cmd-a", SelectAll, Some(KEY_CONTEXT)),
+            KeyBinding::new("cmd-c", Copy, Some(KEY_CONTEXT)),
+            KeyBinding::new("cmd-v", Paste, Some(KEY_CONTEXT)),
             KeyBinding::new("tab", Tab, Some(KEY_CONTEXT)),
             KeyBinding::new("shift-tab", TabPrev, Some(KEY_CONTEXT)),
         ]);
