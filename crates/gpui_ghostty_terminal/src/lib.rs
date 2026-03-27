@@ -17,6 +17,16 @@ pub use session::TerminalSession;
 pub use themes::{get_embedded_theme, list_embedded_themes};
 pub use view::{Copy, CopyLastOutput, Paste, SelectAll};
 
+/// Fish shell integration script that emits OSC 133 markers.
+///
+/// Write this to `<dir>/fish/vendor_conf.d/ghostty-shell-integration.fish`,
+/// then set `XDG_DATA_DIRS` to include `<dir>` and set
+/// `GHOSTTY_SHELL_FEATURES=no-cursor,no-sudo` before spawning fish.
+/// Fish will auto-source the script and emit OSC 133 prompt/command markers.
+pub const GHOSTTY_FISH_INTEGRATION_SCRIPT: &str = include_str!(
+    "../../../vendor/ghostty/src/shell-integration/fish/vendor_conf.d/ghostty-shell-integration.fish"
+);
+
 use gpui::{WindowBackgroundAppearance, WindowOptions};
 
 /// Build `WindowOptions` with the appropriate background appearance for the given config.
