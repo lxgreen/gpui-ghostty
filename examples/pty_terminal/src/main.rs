@@ -4,7 +4,9 @@ use std::thread;
 use std::time::Duration;
 
 use gpui::{App, AppContext, Application, KeyBinding, px};
-use gpui_ghostty_terminal::view::{Copy, CopyLastOutput, Paste, SelectAll, TerminalInput, TerminalView};
+use gpui_ghostty_terminal::view::{
+    Copy, CopyLastOutput, Paste, SelectAll, TerminalInput, TerminalView,
+};
 use gpui_ghostty_terminal::{
     TerminalConfig, TerminalSession, load_config, terminal_font, window_options_for_config,
 };
@@ -59,6 +61,23 @@ fn main() {
             cmd.env("TERM", "xterm-256color");
             cmd.env("COLORTERM", "truecolor");
             cmd.env("TERM_PROGRAM", "gpui-ghostty");
+
+            // Enable Ghostty shell integration so fish emits OSC 133 markers.
+            // Fish auto-sources vendor_conf.d/*.fish files from XDG_DATA_DIRS;
+            // prepending the vendored integration directory activates it.
+            const GHOSTTY_INTEGRATION_DIR: &str = concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../vendor/ghostty/src/shell-integration"
+            );
+            cmd.env("GHOSTTY_SHELL_INTEGRATION_XDG_DIR", GHOSTTY_INTEGRATION_DIR);
+            cmd.env("GHOSTTY_SHELL_FEATURES", "no-cursor,no-sudo");
+            let xdg = match std::env::var("XDG_DATA_DIRS") {
+                Ok(existing) if !existing.is_empty() => {
+                    format!("{}:{}", GHOSTTY_INTEGRATION_DIR, existing)
+                }
+                _ => GHOSTTY_INTEGRATION_DIR.to_string(),
+            };
+            cmd.env("XDG_DATA_DIRS", xdg);
 
             let mut child = pty_pair
                 .slave
