@@ -15,6 +15,9 @@ pub struct TerminalSession {
     parse_tail: Vec<u8>,
     dsr_state: DsrScanState,
     osc_query_state: OscQueryScanState,
+    osc133_state: Osc133ScanState,
+    osc133_output_start_row: Option<u16>,
+    last_command_output: Option<String>,
 }
 
 impl TerminalSession {
@@ -40,6 +43,9 @@ impl TerminalSession {
             parse_tail: Vec::new(),
             dsr_state: DsrScanState::default(),
             osc_query_state: OscQueryScanState::default(),
+            osc133_state: Osc133ScanState::default(),
+            osc133_output_start_row: None,
+            last_command_output: None,
         })
     }
 
@@ -97,6 +103,44 @@ impl TerminalSession {
 
     pub fn take_clipboard_write(&mut self) -> Option<String> {
         self.clipboard_write.take()
+    }
+
+    /// Returns the rendered text of the last completed command's output, captured via OSC 133
+    /// shell integration markers. Returns `None` if no command has completed since the last call
+    /// or if the shell does not emit OSC 133 sequences.
+    ///
+    /// Only output visible in the terminal viewport at the time the command completed is captured.
+    pub fn take_last_command_output(&mut self) -> Option<String> {
+        self.last_command_output.take()
+    }
+
+    /// Dump viewport rows [first_row_0indexed, last_row_0indexed] inclusive, strip trailing
+    /// whitespace per line, and join with newlines.  Returns `None` when the range is empty.
+    fn collect_output_rows(
+        &self,
+        first_row_0indexed: u16,
+        last_row_0indexed: u16,
+    ) -> Option<String> {
+        if last_row_0indexed < first_row_0indexed {
+            return None;
+        }
+
+        let mut lines: Vec<String> = Vec::new();
+        for row in first_row_0indexed..=last_row_0indexed {
+            let line = self.terminal.dump_viewport_row(row).unwrap_or_default();
+            lines.push(line.trim_end().to_string());
+        }
+
+        // Drop trailing empty lines
+        while lines.last().map(|l: &String| l.is_empty()).unwrap_or(false) {
+            lines.pop();
+        }
+
+        if lines.is_empty() {
+            None
+        } else {
+            Some(lines.join("\n"))
+        }
     }
 
     fn update_state_from_output(&mut self, bytes: &[u8]) {
@@ -264,7 +308,8 @@ impl TerminalSession {
         for (i, &b) in bytes.iter().enumerate() {
             let dsr = self.dsr_state.advance(b);
             let osc = self.osc_query_state.advance(b);
-            if dsr.is_none() && osc.is_none() {
+            let osc133 = self.osc133_state.advance(b);
+            if dsr.is_none() && osc.is_none() && osc133.is_none() {
                 continue;
             }
 
@@ -302,6 +347,40 @@ impl TerminalSession {
                 };
                 let resp = osc_color_query_response(query, rgb);
                 send(resp.as_bytes());
+            }
+
+            if let Some(event) = osc133 {
+                match event {
+                    Osc133Event::OutputStart => {
+                        // Record the cursor row (1-indexed) at the command line.
+                        // Output will begin on the next row.
+                        self.osc133_output_start_row =
+                            self.terminal.cursor_position().map(|(_, row)| row);
+                    }
+                    Osc133Event::OutputEnd => {
+                        if let Some(start_row) = self.osc133_output_start_row.take() {
+                            // cursor_position() returns 1-indexed rows.
+                            // dump_viewport_row() takes 0-indexed rows.
+                            //
+                            // At OutputStart (C): cursor is at the first output line (shell
+                            // already moved cursor past the command with \r\n before emitting C).
+                            // At OutputEnd (D): cursor is on the line AFTER the last output line.
+                            //
+                            // Output rows (1-indexed): start_row ..= end_row-1
+                            // Output rows (0-indexed): (start_row-1) ..= (end_row-2)
+                            let end_row = self
+                                .terminal
+                                .cursor_position()
+                                .map(|(_, row)| row)
+                                .unwrap_or(start_row);
+                            if end_row > start_row {
+                                let first = start_row.saturating_sub(1); // 1-indexed → 0-indexed
+                                let last = end_row.saturating_sub(2); // (end_row-1) → 0-indexed
+                                self.last_command_output = self.collect_output_rows(first, last);
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -555,6 +634,78 @@ fn value_to_after_semicolon_state(ps: u32) -> OscQueryScanState {
     match ps {
         10 | 11 => OscQueryScanState::AfterSemicolon { ps },
         _ => OscQueryScanState::Idle,
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Osc133Event {
+    OutputStart,
+    OutputEnd,
+}
+
+/// Byte-level state machine that detects OSC 133;C and OSC 133;D sequences.
+///
+/// OSC 133;C ST — command output start (shell integration)
+/// OSC 133;D [;exit_code] ST — command output end
+///
+/// ST is either BEL (0x07) or ESC \ (0x1b 0x5c).
+#[derive(Clone, Copy, Debug, Default)]
+enum Osc133ScanState {
+    #[default]
+    Idle,
+    Esc,
+    OscOpen,
+    Osc1,
+    Osc13,
+    Osc133,
+    Osc133Semi,
+    WaitTerm(Osc133Event),
+    SkipToTerm(Osc133Event),
+    StEsc(Osc133Event),
+}
+
+impl Osc133ScanState {
+    fn advance(&mut self, b: u8) -> Option<Osc133Event> {
+        use Osc133Event::*;
+        use Osc133ScanState::*;
+
+        let (next, event): (Self, Option<Osc133Event>) = match (*self, b) {
+            // ESC in terminal states: may start ST (ESC \)
+            (WaitTerm(ev), 0x1b) | (SkipToTerm(ev), 0x1b) => (StEsc(ev), None),
+
+            // ESC always (re)starts an OSC sequence
+            (_, 0x1b) => (Esc, None),
+
+            // BEL terminates — fire event
+            (WaitTerm(ev), 0x07) | (SkipToTerm(ev), 0x07) => (Idle, Some(ev)),
+
+            // ST second byte (\ after ESC) — fire event
+            (StEsc(ev), b'\\') => (Idle, Some(ev)),
+
+            // Normal sequence progression
+            (Esc, b']') => (OscOpen, None),
+            (OscOpen, b'1') => (Osc1, None),
+            (Osc1, b'3') => (Osc13, None),
+            (Osc13, b'3') => (Osc133, None),
+            (Osc133, b';') => (Osc133Semi, None),
+            (Osc133Semi, b'C') => (WaitTerm(OutputStart), None),
+            (Osc133Semi, b'D') => (WaitTerm(OutputEnd), None),
+
+            // OSC 133;D may be followed by ;exit_code — skip until terminator
+            (WaitTerm(OutputEnd), b';') => (SkipToTerm(OutputEnd), None),
+
+            // In SkipToTerm: consume all bytes until terminator (handled above)
+            (SkipToTerm(ev), _) => (SkipToTerm(ev), None),
+
+            // StEsc followed by anything other than '\\' resets
+            (StEsc(_), _) => (Idle, None),
+
+            // Any other byte resets
+            _ => (Idle, None),
+        };
+
+        *self = next;
+        event
     }
 }
 

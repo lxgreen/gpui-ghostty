@@ -10,7 +10,10 @@ use gpui::{
 use std::ops::Range;
 use std::sync::Once;
 
-actions!(terminal_view, [Copy, Paste, SelectAll, Tab, TabPrev]);
+actions!(
+    terminal_view,
+    [Copy, CopyLastOutput, Paste, SelectAll, Tab, TabPrev]
+);
 
 const KEY_CONTEXT: &str = "Terminal";
 static KEY_BINDINGS: Once = Once::new();
@@ -20,6 +23,7 @@ fn ensure_key_bindings(cx: &mut App) {
         cx.bind_keys([
             KeyBinding::new("cmd-a", SelectAll, Some(KEY_CONTEXT)),
             KeyBinding::new("cmd-c", Copy, Some(KEY_CONTEXT)),
+            KeyBinding::new("cmd-shift-c", CopyLastOutput, Some(KEY_CONTEXT)),
             KeyBinding::new("cmd-v", Paste, Some(KEY_CONTEXT)),
             KeyBinding::new("tab", Tab, Some(KEY_CONTEXT)),
             KeyBinding::new("shift-tab", TabPrev, Some(KEY_CONTEXT)),
@@ -811,6 +815,20 @@ impl TerminalView {
         cx.write_to_clipboard(item.clone());
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         cx.write_to_primary(item);
+    }
+
+    fn on_copy_last_output(
+        &mut self,
+        _: &CopyLastOutput,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(text) = self.session.take_last_command_output() {
+            let item = ClipboardItem::new_string(text);
+            cx.write_to_clipboard(item.clone());
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+            cx.write_to_primary(item);
+        }
     }
 
     fn on_select_all(&mut self, _: &SelectAll, window: &mut Window, cx: &mut Context<Self>) {
@@ -2235,6 +2253,7 @@ impl Render for TerminalView {
             .track_focus(&self.focus_handle)
             .key_context(KEY_CONTEXT)
             .on_action(cx.listener(Self::on_copy))
+            .on_action(cx.listener(Self::on_copy_last_output))
             .on_action(cx.listener(Self::on_select_all))
             .on_action(cx.listener(Self::on_paste))
             .on_action(cx.listener(Self::on_tab))

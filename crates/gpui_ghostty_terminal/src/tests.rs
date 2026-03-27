@@ -396,3 +396,104 @@ fn maps_common_box_drawing_glyphs() {
     }
     assert!(crate::view::box_drawing_mask('X').is_none());
 }
+
+// OSC 133 shell integration — last command output capture.
+//
+// Shells emit OSC 133;C after printing the newline that follows the command
+// line (cursor already on the first output row) and OSC 133;D after the
+// command finishes (cursor on the line after the last output row).
+//
+// Sequences used below:
+//   \x1b]133;C\x07   = OSC 133;C  BEL-terminated
+//   \x1b]133;D;0\x07 = OSC 133;D  with exit code 0, BEL-terminated
+
+#[test]
+fn osc133_captures_single_line_output() {
+    let mut session = TerminalSession::new(TerminalConfig::default()).unwrap();
+
+    // Cursor starts at row 1.  Simulate shell moving to next line before C.
+    let mut responses = Vec::<u8>::new();
+    // Move cursor to row 2 (simulate shell \r\n after command line).
+    session
+        .feed_with_pty_responses(b"\r\n", |b| responses.extend_from_slice(b))
+        .unwrap();
+    // OSC 133;C — output start, cursor is at row 2.
+    session
+        .feed_with_pty_responses(b"\x1b]133;C\x07", |b| responses.extend_from_slice(b))
+        .unwrap();
+    // Command output: "hello\r\n" — printed at row 2, cursor moves to row 3.
+    session
+        .feed_with_pty_responses(b"hello\r\n", |b| responses.extend_from_slice(b))
+        .unwrap();
+    // OSC 133;D;0 — output end, cursor is at row 3.
+    session
+        .feed_with_pty_responses(b"\x1b]133;D;0\x07", |b| responses.extend_from_slice(b))
+        .unwrap();
+
+    let output = session.take_last_command_output();
+    assert_eq!(output.as_deref(), Some("hello"));
+
+    // Consumed — second call returns None.
+    assert!(session.take_last_command_output().is_none());
+}
+
+#[test]
+fn osc133_captures_multi_line_output() {
+    let mut session = TerminalSession::new(TerminalConfig::default()).unwrap();
+
+    let mut noop = |_: &[u8]| {};
+    session.feed_with_pty_responses(b"\r\n", &mut noop).unwrap();
+    session
+        .feed_with_pty_responses(b"\x1b]133;C\x07", &mut noop)
+        .unwrap();
+    session
+        .feed_with_pty_responses(b"line1\r\nline2\r\nline3\r\n", &mut noop)
+        .unwrap();
+    session
+        .feed_with_pty_responses(b"\x1b]133;D;0\x07", &mut noop)
+        .unwrap();
+
+    let output = session.take_last_command_output().unwrap();
+    let lines: Vec<&str> = output.lines().collect();
+    assert_eq!(lines, ["line1", "line2", "line3"]);
+}
+
+#[test]
+fn osc133_captures_output_with_st_terminator() {
+    let mut session = TerminalSession::new(TerminalConfig::default()).unwrap();
+
+    let mut noop = |_: &[u8]| {};
+    session.feed_with_pty_responses(b"\r\n", &mut noop).unwrap();
+    // Use ESC \ (ST) instead of BEL.
+    session
+        .feed_with_pty_responses(b"\x1b]133;C\x1b\\", &mut noop)
+        .unwrap();
+    session
+        .feed_with_pty_responses(b"result\r\n", &mut noop)
+        .unwrap();
+    session
+        .feed_with_pty_responses(b"\x1b]133;D;0\x1b\\", &mut noop)
+        .unwrap();
+
+    assert_eq!(
+        session.take_last_command_output().as_deref(),
+        Some("result")
+    );
+}
+
+#[test]
+fn osc133_returns_none_when_no_output() {
+    let mut session = TerminalSession::new(TerminalConfig::default()).unwrap();
+
+    let mut noop = |_: &[u8]| {};
+    session.feed_with_pty_responses(b"\r\n", &mut noop).unwrap();
+    session
+        .feed_with_pty_responses(b"\x1b]133;C\x07", &mut noop)
+        .unwrap();
+    // No output — cursor stays at same row, D fires immediately.
+    session
+        .feed_with_pty_responses(b"\x1b]133;D;0\x07", &mut noop)
+        .unwrap();
+
+    assert!(session.take_last_command_output().is_none());
+}

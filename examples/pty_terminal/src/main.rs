@@ -4,7 +4,7 @@ use std::thread;
 use std::time::Duration;
 
 use gpui::{App, AppContext, Application, KeyBinding, px};
-use gpui_ghostty_terminal::view::{Copy, Paste, SelectAll, TerminalInput, TerminalView};
+use gpui_ghostty_terminal::view::{Copy, CopyLastOutput, Paste, SelectAll, TerminalInput, TerminalView};
 use gpui_ghostty_terminal::{
     TerminalConfig, TerminalSession, load_config, terminal_font, window_options_for_config,
 };
@@ -15,6 +15,7 @@ fn main() {
         cx.bind_keys([
             KeyBinding::new("cmd-a", SelectAll, None),
             KeyBinding::new("cmd-c", Copy, None),
+            KeyBinding::new("cmd-shift-c", CopyLastOutput, None),
             KeyBinding::new("cmd-v", Paste, None),
         ]);
 

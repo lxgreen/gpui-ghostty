@@ -15,6 +15,7 @@ pub use font::{default_terminal_font, default_terminal_font_features, terminal_f
 pub use ghostty_vt::{CursorStyle, Rgb};
 pub use session::TerminalSession;
 pub use themes::{get_embedded_theme, list_embedded_themes};
+pub use view::{Copy, CopyLastOutput, Paste, SelectAll};
 
 use gpui::{WindowBackgroundAppearance, WindowOptions};
 
